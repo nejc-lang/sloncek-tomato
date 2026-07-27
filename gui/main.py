@@ -234,11 +234,14 @@ class MainWindow(QMainWindow):
             message = result.get("message", "Neznana napaka")
             self.append_log("NAPAKA: " + message)
             QMessageBox.critical(self, "Napaka", message)
-            self._start_elephant_animation()
             return
 
         self._handle_obdelaj_result(result)
-        self._start_elephant_animation()
+        # Animacija slončka se predvaja le ob v celoti uspešno zaključenem
+        # procesu (vse_uspesno) - ne ob API napaki (obravnavano zgoraj) in ne
+        # ob delnem neuspehu (nekatere prevzemnice niso bile posodobljene).
+        if result.get("vse_uspesno"):
+            self._start_elephant_animation()
 
     def _handle_obdelaj_result(self, result: dict) -> None:
         self.status_label.setText("Obdelava zaključena.")

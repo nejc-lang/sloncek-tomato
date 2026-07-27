@@ -21,16 +21,25 @@ class Settings(BaseSettings):
     # Dolžina številke DN/prevzemnice z vodilnimi ničlami (StevilkaOd/Do).
     STEVILKA_PADDING: int = 5
 
-    # TESTNO OBDOBJE (glej README.md): PUT /api/v1/FA/prevzemnica še ni
-    # objavljen v eVasco swaggerju (stanje 2026-07-27), zato se dejanski PUT
-    # klic (EVascoClient.update_prevzemnica) v app/process.py::run PRESKOČI,
-    # dokler je ta zastavica True - sistem kljub temu pridobi vse podatke,
-    # izračuna telo posodobitve in ga arhivira v
-    # data/izhodni_zahtevki/prevzemnica_posodobitev_*.json, da je mogoče
-    # natančno preveriti, kaj bi PUT poslal. Ko eVasco objavi PUT in je
-    # EVascoClient.update_prevzemnica preverjen/popravljen, nastavi na False
-    # v .env - brez posega v kodo. LOT/DATUM_UPORABNOSTI (FASifranti/lotPodatki)
-    # so tem neodvisen, že delujoč endpoint in se pišejo ne glede na to zastavico.
+    # TESTNO OBDOBJE: spodnja meja (vključno) številke delovnega naloga, ki
+    # se obdeluje - DN z nižjo `stevilka` se client-side izločijo (glej
+    # app/process.py::run), da se med ročnim testiranjem sistem ne dotika
+    # DN/prevzemnic, obdelanih pred uvedbo te verzije. `1` = brez omejitve
+    # (privzeto). Primerjava je numerična, ne string.
+    DN_STEVILKA_OD: int = 1
+
+    # TESTNO OBDOBJE (glej README.md): PUT /api/v1/FA/prevzemnica in
+    # PUT /api/v1/FA/prevzemnica/spremembaPostavk sta od 2026-07-27 objavljena
+    # v eVasco swaggerju (glej swagger.json) in EVascoClient.update_prevzemnica
+    # / update_prevzemnica_postavke sta implementirana po tej dokumentirani
+    # shemi - kljub temu dejanska PUT klica v app/process.py::run še vedno
+    # PRESKOČIMO, dokler je ta zastavica True (privzeto), da se implementacija
+    # najprej preveri na dry-run izpisu (data/izhodni_zahtevki/*.json), preden
+    # gre v produkcijo. Sistem kljub dry-runu pridobi vse podatke, izračuna
+    # obe telesi posodobitve in ju arhivira. Ko je izpis ročno preverjen in
+    # potrjen, nastavi na False v .env - brez posega v kodo.
+    # LOT/DATUM_UPORABNOSTI (FASifranti/lotPodatki) so od tega neodvisen, že
+    # delujoč endpoint in se pišejo ne glede na to zastavico.
     PUT_PREVZEMNICA_DRY_RUN: bool = True
 
 

@@ -4,12 +4,22 @@ Projekt `DN-PREVZEMNICA-Tomato` (skelet že postavljen: FastAPI backend na portu
 
 ## Namen sistema
 
-**En korak** (od 2026-07-27, prej dvokoračen proces brisanje+kreiranje — glej git zgodovino): poišče vse delovne naloge (DN) današnjega dne, ki še niso bili obdelani, s pogoji `FAKTURIRANA = 7` in `SKLADISCE = 11`. Za vsak DN pridobi vrednost dodatnega polja `PRE_STEVILKA` in z njo poišče povezano prevzemnico (glava + postavke). Nato za vsako najdeno prevzemnico z enim **API PUT klicem** dopolni obstoječe vrednosti neposredno na tej isti prevzemnici — brez brisanja in ponovnega ustvarjanja. Dopolnjujejo se: `datum`, `ins_drzava`, `ins_drzava_porekla`, `komercialist`, `skladisce`, `skladisce_za_odpis`, `ins_vrsta_transporta`, `lot`, `datum_uporabnosti`, `cena_vnesena` (glej izračune spodaj).
+**En korak** (od 2026-07-27, prej dvokoračen proces brisanje+kreiranje — glej git zgodovino): poišče vse delovne naloge (DN) današnjega dne, ki še niso bili obdelani, s pogoji `FAKTURIRANA = 7` in `SKLADISCE = 11`. Za vsak DN pridobi vrednost dodatnega polja `PRE_STEVILKA` in z njo poišče povezano prevzemnico (glava + postavke). Nato za vsako najdeno prevzemnico z **dvema API PUT klicema** dopolni obstoječe vrednosti neposredno na tej isti prevzemnici — brez brisanja in ponovnega ustvarjanja:
+- `PUT /api/v1/FA/prevzemnica` (glava): `datum`, `ins_drzava`, `komercialist`, `skladisce`, `skladisce_za_odpis`, `ins_vrsta_transporta`.
+- `PUT /api/v1/FA/prevzemnica/spremembaPostavk` (postavke): `lot`, `ins_drzava_porekla`, `cena_vnesena` (glej izračune spodaj).
 
-**⚠️ PUT endpoint za `/api/v1/FA/prevzemnica` še ni objavljen v swaggerju** (stanje 2026-07-27; do zdaj sta bila na voljo samo `GET`/`POST`). Ko bo eVasco stran objavila natančno specifikacijo, je treba preveriti/popraviti `EVascoClient.update_prevzemnica` (pot, način identifikacije ciljne prevzemnice, natančna oblika telesa) — trenutna implementacija je najboljša ocena glede na obstoječ vzorec (`StevilkaOd`/`StevilkaDo` query parametra kot pri GET-u, telo v obliki `PrevzemnicaPostBaseRequest` s samo spremenjenimi polji).
+`datum_uporabnosti` gre ločeno preko `FASifranti/lotPodatki` (glej spodaj).
+
+**Oba PUT endpointa sta objavljena v swaggerju od 2026-07-27** (glej `swagger.json`, shemi `PrevzemnicaPutRequest` in `PrevzemnicaPutVecPostavkBaseRequest`/`PrevzemnicaPostavkaPutRequest`). Ključne ugotovitve glede na prejšnjo (nedokumentirano) oceno:
+- To sta **dva ločena endpointa**, ne en klic z gnezdenimi `postavke` — `PrevzemnicaPutRequest` (glava) ima `additionalProperties: false` in NIMA `postavke` polja.
+- Ciljna prevzemnica se identificira preko `stevilka`/`leto` **v telesu**, ne preko `StevilkaOd`/`StevilkaDo` query parametrov kot pri GET-u.
+- Vsaka postavka v `spremembaPostavk` MORA vsebovati `zs` (zaporedna številka postavke, native polje na GET odgovoru postavke) poleg `sifra`.
+- `INS_DRZAVA_POREKLA` je **postavka-nivojsko** polje (tabela `FA_PREVZEMNICA_KNJIZBA`, potrjeno preko `GET /api/v1/FA/prevzemnica/postavka/polja`), ne glava-nivojsko kot je predvidevala prejšnja ocena.
+- `EVascoClient.update_prevzemnica` (glava) in `EVascoClient.update_prevzemnica_postavke` (postavke) sta implementirana po tej dokumentirani shemi; `PUT_PREVZEMNICA_DRY_RUN` (glej `app/config.py`) ostaja `True`, dokler dry-run izpis ni ročno preverjen na živih podatkih.
 
 ## Sledenje že obdelanim DN
 
+- **TESTNO OBDOBJE**: `settings.DN_STEVILKA_OD` (`.env`, privzeto `1` = brez omejitve) je spodnja meja (vključno) `stevilka` delovnega naloga - DN z nižjo numerično vrednostjo se client-side izločijo takoj po pridobitvi iz API-ja (`app/process.py::run`), preden gre sistem naprej v iskanje prevzemnic. Namen: med ročnim testiranjem preprečiti poseg v DN/prevzemnice, ki obstajajo od prej. Primerjava je numerična (`int(dn["stevilka"])`, API vrača ne-zero-padded string npr. `"52870"`), ne string.
 - Vsak zagon vedno išče DN v datumskem razponu **`DatumOd = danes - 1`, `DatumDo = danes`** (pokrije tudi primer, ko se program ne zažene točno vsak dan).
 - Sistem persistentno hrani **seznam že obdelanih DN** (`stevilka.leto`, `data/obdelani_dn.json`). To ni "zadnja številka" (x1), ker datumski razpon pokriva 2 dni in številke DN znotraj njega niso nujno strogo naraščajoče/brez vrzeli glede na filter.
 - Po pridobitvi DN iz API-ja (glej filter spodaj) sistem **client-side izloči** tiste, ki so že v seznamu obdelanih, preden nadaljuje z iskanjem prevzemnic.
@@ -41,7 +51,7 @@ Projekt `DN-PREVZEMNICA-Tomato` (skelet že postavljen: FastAPI backend na portu
 
 **Dodatni podatki na vsaki postavki (LOT, DATUM_UPORABNOSTI, CENA_VNESENA)**
 
-Za vsako postavko obstoječe prevzemnice je treba izračunati in zapisati tri dodatne vrednosti. LOT in CENA_VNESENA gresta preko `postavke[].dodatnaPolja[]` v PUT telesu (glej telo spodaj) — **razen `DATUM_UPORABNOSTI`, ki ni polje na postavki prevzemnice, ampak gre v ločen šifrant lotov** (glej spodaj).
+Za vsako postavko obstoječe prevzemnice je treba izračunati in zapisati tri dodatne vrednosti. LOT, INS_DRZAVA_POREKLA in CENA_VNESENA gresta preko `postavke[].dodatnaPolja[]` v telesu `PUT /api/v1/FA/prevzemnica/spremembaPostavk` (glej telo spodaj) — **razen `DATUM_UPORABNOSTI`, ki ni polje na postavki prevzemnice, ampak gre v ločen šifrant lotov** (glej spodaj).
 
 1. **LOT** — format `ddmmyy`, izračunan iz datuma **obstoječe prevzemnice** (potrjeno). Npr. za 12.3.2026 → `"120326"`.
    ```python
@@ -54,10 +64,11 @@ Za vsako postavko obstoječe prevzemnice je treba izračunati in zapisati tri do
    prosto_r5_dni = int(float(artikel["dodatnaPolja"][0]["vrednost"]))  # dodatnaPolja[naziv=="PROSTO_R5"]
    datum_uporabnosti = prevzemnica_original["datum"] + timedelta(days=prosto_r5_dni)
    ```
-   **Kam se zapiše**: `DATUM_UPORABNOSTI` **ni** stolpec tabele `FA_PREVZEMNICA_KNJIZBA` (ni ga v seznamu iz `/prevzemnica/postavka/polja`) — gre v ločen centralni šifrant lotov: `POST`/`PUT /api/v1/FASifranti/lotPodatki`, telo `{"sifra": <sifra artikla>, "lot": <LOT iz točke 1>, "datumUporabnosti": <izračunan datum>}`.
+   **Pogoj (potrjeno s strani uporabnika 2026-07-27)**: zapiše se SAMO, če je `PROSTO_R5 >= 1`. Če je `PROSTO_R5 == 0` (ali manjka), se `DATUM_UPORABNOSTI` za to postavko sploh NE zapiše (izdelek brez roka uporabnosti) - `lotPodatki` zapis se zanjo ne pripravi. Primer: danes 27.07.2026, izdelek s `PROSTO_R5 = 2` → `datum_uporabnosti = 29.07.2026`.
+   **Kam se zapiše**: `DATUM_UPORABNOSTI` **ni** stolpec tabele `FA_PREVZEMNICA_KNJIZBA` (ni ga v seznamu iz `/prevzemnica/postavka/polja`) in ni del nobenega od dveh `PUT /api/v1/FA/prevzemnica*` teles zgoraj/spodaj — gre v ločen centralni šifrant lotov: `POST`/`PUT /api/v1/FASifranti/lotPodatki`, telo `{"sifra": <sifra artikla>, "lot": <LOT iz točke 1>, "datumUporabnosti": <izračunan datum>}`. Ta klic (glej `app/process.py::run`, blok "LOT / DATUM_UPORABNOSTI") se izvede NEODVISNO od `PUT_PREVZEMNICA_DRY_RUN` (glej `app/config.py`) - torej dejansko piše v produkcijo že zdaj, za vsako postavko s `PROSTO_R5 >= 1`.
    - Pred vpisom **najprej preveri z GET-om** (`GET /api/v1/FASifranti/lotPodatki?Sifra=<sifra>&Lot=<lot>`), ali kombinacija šifra+lot že obstaja (POST vrne `409`, če že obstaja) — če obstaja, uporabi `PUT` (ažuriranje) namesto `POST`, ali preskoči, če je vrednost že enaka.
 
-3. **CENA_VNESENA** — vrednost gre v `postavke[].dodatnaPolja` kot `{"naziv": "CENA_VNESENA", "vrednost": cena_izdelka}` (ni nativno polje v `PrevzemnicaPostavkePutPostBaseRequest`). Izračun: `cena_izdelka = cena_mat + cena_op`, nato zaokroženo na **največ 5 številskih mest (significant digits, ne decimalnih mest)** pred pošiljanjem preko API klica — npr. `2.043656` → `2.0437`, `123.456789` → `123.46` (potrjeno s strani uporabnika 2026-07-24, implementirano v `_round_cena` v `app/process.py`).
+3. **CENA_VNESENA** — vrednost gre v `postavke[].dodatnaPolja` kot `{"naziv": "CENA_VNESENA", "vrednost": cena_izdelka}` (ni nativno polje v `PrevzemnicaPostavkaPutRequest`, samo dodatno polje - potrjeno preko `GET /api/v1/FA/prevzemnica/postavka/polja`). Izračun: `cena_izdelka = cena_mat + cena_op`, nato zaokroženo na **največ 5 številskih mest (significant digits, ne decimalnih mest)** pred pošiljanjem preko API klica — npr. `2.043656` → `2.0437`, `123.456789` → `123.46` (potrjeno s strani uporabnika 2026-07-24, implementirano v `_round_cena` v `app/process.py`).
 
    **Kontrola prodajne cene** (potrjeno s strani uporabnika 2026-07-24, smer primerjave popravljena isti dan): po izračunu se `CENA_VNESENA` primerja z najnižjo od dveh dodatnih polj `PRODAJNA_CENA3`/`PRODAJNA_CENA4` (`GET /api/v1/FASifranti/artikel?Sifra=<sifra_izdelka>&DodatnaPolja=PRODAJNA_CENA3,PRODAJNA_CENA4`, glej `_fetch_prodajne_cene_izdelka_lookup`). Če je `CENA_VNESENA` **višja** od te najnižje prodajne cene (izdelek bi se prodajal z izgubo), se doda opozorilo (prefiks `CENA_OPOZORILO:` v `warnings`) - GUI ga izpiše z **rdečim tekstom** (glej `gui/main.py::append_log`). `0`/manjkajoča vrednost na `PRODAJNA_CENA3`/`4` se šteje za "cena ni nastavljena" (isti dogovor kot pri `NABAVNA_CENA`) in se izloči iz primerjave; če nobena od obeh ni nastavljena, se primerjava izpusti. (Prvotna verzija je pomotoma opozarjala v obratnem primeru - ko je bila cena_vnesena NIŽJA od prodajne cene, kar je pravzaprav normalno/dobro stanje.)
 
@@ -83,24 +94,35 @@ Za vsako postavko obstoječe prevzemnice je treba izračunati in zapisati tri do
    ```
 
 
-PUT telo namenoma vsebuje SAMO polja, ki se dejansko spreminjajo — `dobavitelj`/`rabat1` in `kolicina`/`nabavnaCena`/`stopnjaDdv` na postavkah ostanejo nedotaknjeni (obstoječa prevzemnica se ne prepiše v celoti, samo dopolni). `DOKUMENT_DOBAVNICA` ni več potreben (sledljivost do izvirnega DN ni potrebna — prevzemnica ostane ista, ne nastane nova). Sestavi takole (glej `app/process.py::_prepare_prevzemnica_update`):
+PUT telesi namenoma vsebujeta SAMO polja, ki se dejansko spreminjajo — `dobavitelj`/`rabat1` in `kolicina`/`nabavnaCena`/`stopnjaDdv` na postavkah ostanejo nedotaknjeni (obstoječa prevzemnica se ne prepiše v celoti, samo dopolni). `DOKUMENT_DOBAVNICA` (glava-nivojsko dodatno polje) je **potreben** — vrednost `"{dn_stevilka} DN"` (potrjeno s strani uporabnika 2026-07-27), kjer je `dn_stevilka` številka DELOVNEGA NALOGA (ne prevzemnice). Sestavi takole (glej `app/process.py::_prepare_prevzemnica_update`):
 
 ```python
-body = {
+# PUT /api/v1/FA/prevzemnica (glava, PrevzemnicaPutRequest)
+header_body = {
+    "stevilka": prevzemnica_original["stevilka"],   # identifikacija V TELESU, ne query parametrov
+    "leto": prevzemnica_original["leto"],
     "datum": prevzemnica_original["datum"],
     "komercialist": "011",                          # string, max 5 znakov
     "skladisce": 11,
     "dodatnaPolja": [
         {"naziv": "INS_DRZAVA", "vrednost": 705},
-        {"naziv": "INS_DRZAVA_POREKLA", "vrednost": 705},
         {"naziv": "SKLADISCE_ZA_ODPIS", "vrednost": 11},
         {"naziv": "INS_VRSTA_TRANSPORTA", "vrednost": 3},
+        {"naziv": "DOKUMENT_DOBAVNICA", "vrednost": f"{dn_stevilka} DN"},
     ],
+}
+
+# PUT /api/v1/FA/prevzemnica/spremembaPostavk (postavke, PrevzemnicaPutVecPostavkBaseRequest)
+postavke_body = {
+    "stevilka": prevzemnica_original["stevilka"],
+    "leto": prevzemnica_original["leto"],
     "postavke": [
         {
             "sifra": p["sifra"],
+            "zs": p["zs"],                           # obvezno - zaporedna št. postavke, native polje na GET-u
             "dodatnaPolja": [
                 {"naziv": "LOT", "vrednost": lot},
+                {"naziv": "INS_DRZAVA_POREKLA", "vrednost": 705},
                 {"naziv": "CENA_VNESENA", "vrednost": cena_izdelka},  # glej izračun zgoraj; samo za izdelke
             ],
         }
@@ -109,10 +131,10 @@ body = {
 }
 ```
 
-`DATUM_UPORABNOSTI` gre ločeno, preko `FASifranti/lotPodatki` (ni del zgornjega telesa) — glej razdelek zgoraj.
+`DATUM_UPORABNOSTI` gre ločeno, preko `FASifranti/lotPodatki` (ni del zgornjih teles) — glej razdelek zgoraj.
 
 - **Potrjeno**: `stopnjaDdv` se pri PUT-u ne pošilja — ostaja nespremenjen.
-- PUT klic identificira ciljno prevzemnico (glej `EVascoClient.update_prevzemnica` — trenutno `StevilkaOd`/`StevilkaDo` query parametra, enako kot pri GET-u; **preveriti, ko bo PUT objavljen v swaggerju**).
+- Oba PUT klica identificirata ciljno prevzemnico preko `stevilka`/`leto` **v telesu** (glej `EVascoClient.update_prevzemnica` / `update_prevzemnica_postavke`), ne preko `StevilkaOd`/`StevilkaDo` query parametrov kot pri GET-u.
 
 ## Qt6 GUI
 

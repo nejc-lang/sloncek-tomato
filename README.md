@@ -217,7 +217,7 @@ backend — kliče ga preko HTTP na naslov, ki ga nastaviš v `gui/.env`.
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements-gui.txt
+pip install -r gui/requirements.txt
 
 cp gui/.env.example gui/.env
 # uredi gui/.env in nastavi:
@@ -271,14 +271,14 @@ app/
   process.py           run() - poslovna logika (iskanje DN, izračuni, PUT posodobitev prevzemnice)
 gui/
   main.py             Qt6 GUI klient - gumb Obdelaj
+  requirements.txt      odvisnosti GUI klienta (host)
   .env.example         predloga za API_BASE_URL (naslov backenda v LAN)
   gui.spec              PyInstaller spec (gui/main.py -> onefile .exe)
-  build_exe.bat         Windows: zgradi dist\DN-PREVZEMNICA-Tomato-GUI.exe
+  build_exe.bat         Windows: zgradi gui\dist\DN-PREVZEMNICA-Tomato-GUI.exe
   setup.iss             Inno Setup skripta (namestitveni jezik: EN)
   build_installer.bat   Windows: build_exe.bat + Inno Setup -> Setup.exe
   INSTALLER.md           navodila za gradnjo namestitvenega paketa
 requirements.txt        odvisnosti backenda (Docker)
-requirements-gui.txt     odvisnosti GUI klienta (host)
 data/                    persistenca (volume v Dockerju, .gitignore na hostu)
 ```
 

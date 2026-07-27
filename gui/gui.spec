@@ -22,6 +22,11 @@ a = Analysis(
     excludes=[],
     noarchive=False,
 )
+
+# Ikona .exe (in posledično bližnjic, ki privzeto povzamejo ikono tarče) -
+# prva slika slončka (glej gui/pic-sloncek/app_icon.ico, generirana iz
+# flying_elephant_frame_1.png).
+ICON_PATH = str(ROOT / "gui" / "pic-sloncek" / "app_icon.ico")
 pyz = PYZ(a.pure, a.zipped_data)
 
 exe = EXE(
@@ -44,4 +49,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=ICON_PATH,
 )

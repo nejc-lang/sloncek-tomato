@@ -209,21 +209,33 @@ class EVascoClient:
         """PUT /api/v1/FASifranti/lotPodatki - ažurira obstoječ šifra+lot zapis."""
         self.put("/api/v1/FASifranti/lotPodatki", json=body)
 
-    def update_prevzemnica(self, stevilka_leto: str, body: dict) -> dict | None:
-        """PUT /api/v1/FA/prevzemnica - posodobi OBSTOJEČO prevzemnico (dopolni polja).
+    def update_prevzemnica(self, body: dict) -> dict | None:
+        """PUT /api/v1/FA/prevzemnica - posodobi GLAVO obstoječe prevzemnice (`PrevzemnicaPutRequest`).
 
-        TODO(preveriti ob objavi PUT-a v swaggerju, od 2026-07-27 še ni
-        dokumentiran): natančna pot/parameter za identifikacijo ciljne
-        prevzemnice (tu privzeto enak vzorec kot pri GET-u,
-        `StevilkaOd`/`StevilkaDo`, glej get_prevzemnica_by_stevilka) in
-        natančna oblika telesa. Telo naj vsebuje samo polja, ki se dejansko
-        spreminjajo (glava: datum/komercialist/skladisce/dodatnaPolja;
-        postavke identificirane po `sifra`, z dodatnaPolja LOT/CENA_VNESENA)
-        - PUT tu pomeni delno dopolnjevanje obstoječega zapisa, ne zamenjavo
-        celotne prevzemnice.
+        Objavljeno v swaggerju 2026-07-27. Ciljna prevzemnica se identificira
+        preko `stevilka`/`leto` V TELESU (ne query parametrov kot pri GET-u).
+        Shema ima `additionalProperties: false` in NE vsebuje `postavke` -
+        za spremembo postavk (LOT/CENA_VNESENA/...) glej
+        `update_prevzemnica_postavke`. Telo naj vsebuje samo polja, ki se
+        dejansko spreminjajo - PUT tu pomeni delno dopolnjevanje obstoječega
+        zapisa, ne zamenjavo celotne prevzemnice.
         """
-        params = {"StevilkaOd": stevilka_leto, "StevilkaDo": stevilka_leto}
-        response = self.put("/api/v1/FA/prevzemnica", json=body, params=params)
+        response = self.put("/api/v1/FA/prevzemnica", json=body)
+        if not response.content:
+            return None
+        return response.json()
+
+    def update_prevzemnica_postavke(self, body: dict) -> dict | None:
+        """PUT /api/v1/FA/prevzemnica/spremembaPostavk - posodobi POSTAVKE obstoječe prevzemnice.
+
+        Objavljeno v swaggerju 2026-07-27 (`PrevzemnicaPutVecPostavkBaseRequest`,
+        ločen endpoint od glave). Vsaka postavka v `body["postavke"]` MORA
+        vsebovati `sifra` IN `zs` (zaporedna številka postavke - native polje
+        `zs` na GET odgovoru postavke, glej get_prevzemnica_by_stevilka) -
+        `sifra` sama ni dovolj za identifikacijo. Vrne 201 Created z
+        `{leto, stevilka}` ob uspehu.
+        """
+        response = self.put("/api/v1/FA/prevzemnica/spremembaPostavk", json=body)
         if not response.content:
             return None
         return response.json()

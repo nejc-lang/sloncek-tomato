@@ -5,7 +5,20 @@
       "Bash(docker compose up *)",
       "Bash(docker exec *)",
       "Bash(git init *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(xxd)",
+      "Bash(curl -s -m 5 -o - -w \"\\\\nHTTP %{http_code}\\\\n\" http://192.168.138.186:8090/)",
+      "Bash(curl -s -m 5 -o - -w \"\\\\nHTTP %{http_code}\\\\n\" http://192.168.138.186:8090/api/obdelaj)",
+      "Bash(curl -s -m 5 -o - -w \"\\\\nHTTP %{http_code}\\\\n\" -X POST http://192.168.138.186:8090/api/obdelaj)",
+      "Bash(curl -s -m 5 -o - -w \"\\\\nHTTP %{http_code}\\\\n\" http://192.168.138.186:8090/docs)",
+      "Bash(curl -s -m 5 http://192.168.138.186:8090/openapi.json)",
+      "Bash(timeout 5 curl -sS -o /dev/null -w \"%{http_code}\\\\n\" http://192.168.138.5:8101/)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(docker compose *)",
+      "Bash(git status *)",
+      "Bash(git check-ignore *)",
+      "Bash(git -C /home/nejcp/docker-DN-PREVZ-Tomato check-ignore -v gui/.env)",
+      "Bash(echo \"---exit:$?\")"
     ]
   }
 }

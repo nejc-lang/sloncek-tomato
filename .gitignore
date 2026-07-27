@@ -4,3 +4,8 @@ __pycache__/
 .venv/
 venv/
 data/
+gui/.venv-build/
+gui/build/
+gui/dist/
+gui/dist_installer/
+gui/redist/

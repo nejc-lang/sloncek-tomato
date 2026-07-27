@@ -3,7 +3,7 @@
 ; Predpogoj: dist\DN-PREVZEMNICA-Tomato-GUI.exe mora že obstajati
 ; (zgrajen z build_exe.bat / gui\gui.spec).
 
-#define MyAppName "DN-PREVZEMNICA-Tomato GUI"
+#define MyAppName "Slonček"
 #define MyAppVersion "1.0"
 #define MyAppPublisher "Digit"
 #define MyAppExeName "DN-PREVZEMNICA-Tomato-GUI.exe"
@@ -13,17 +13,17 @@ AppId={{9E7F2C9E-9E1A-4B7B-8A2B-6C9C7E9E7A11}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\DN-PREVZEMNICA-Tomato-GUI
-DefaultGroupName=DN-PREVZEMNICA-Tomato
+DefaultDirName=C:\DN-PREVZEMNICA_Tomato
+DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 ; Namestitveni jezik: samo angleščina (en sam vnos v [Languages] spodaj -
 ; brez izbirnega dialoga za jezik, namestitev vedno teče v EN).
 ShowLanguageDialog=no
 Compression=lzma2
 SolidCompression=yes
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
-OutputDir=..\dist_installer
+OutputDir=dist_installer
 OutputBaseFilename=DN-PREVZEMNICA-Tomato-GUI-Setup
 UninstallDisplayIcon={app}\{#MyAppExeName}
 WizardStyle=modern
@@ -35,12 +35,17 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Files]
-Source: "..\dist\DN-PREVZEMNICA-Tomato-GUI.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\DN-PREVZEMNICA-Tomato-GUI.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: ".env.example"; DestDir: "{app}"; DestName: ".env.example"; Flags: ignoreversion
-; .env se namesti samo, če v ciljni mapi še ne obstaja (Flags: onlyifdoesntexist) -
-; tako ponovna namestitev/nadgradnja ne prepiše uporabnikove obstoječe konfiguracije
-; (API_BASE_URL/API_KEY).
-Source: ".env.example"; DestDir: "{app}"; DestName: ".env"; Flags: onlyifdoesntexist
+; .env se vedno prepiše z vrednostmi iz gui\.env, kot je bila ta datoteka
+; nastavljena na razvijalčevem računalniku v trenutku generiranja tega
+; namestitvenega paketa (vključno z API_KEY) - namerno, na uporabnikovo
+; željo, da ni potrebno ročno vnašanje API ključa po namestitvi.
+Source: ".env"; DestDir: "{app}"; DestName: ".env"; Flags: ignoreversion
+; Visual C++ Redistributable (x64) - vgrajen v namestitveni paket (offline),
+; da namestitev na ciljnem računalniku ne potrebuje internetne povezave.
+; Prenese se ga med build-om, glej build_installer.bat.
+Source: "redist\vc_redist.x64.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -53,13 +58,11 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: po
 
 ; --- Runtime odvisnost: Microsoft Visual C++ Redistributable (x64) ---
 ; PySide6/Qt6 na Windows potrebuje ta runtime; na marsikaterem sistemu je
-; že prisoten (npr. zaradi drugih aplikacij ali Windows Update). Spodnji
-; [Code] razdelek ga namesti SAMO, če registrski ključ pokaže, da ga (še)
-; ni - "če že niso [nameščene], drugič pa ni potrebno".
+; že prisoten (npr. zaradi drugih aplikacij ali Windows Update). Namestitveni
+; program ga nosi s seboj (glej [Files] zgoraj) - namestitev ne potrebuje
+; internetne povezave. Spodnji [Code] razdelek ga zažene SAMO, če registrski
+; ključ pokaže, da ga (še) ni - "če je že nameščen, drugič ni potrebno".
 [Code]
-function URLDownloadToFile(pCaller: Integer; szURL, szFileName: string; Reserved: Integer; lpfnCB: Integer): Integer;
-  external 'URLDownloadToFileA@urlmon.dll stdcall';
-
 function VCRedistInstalled(): Boolean;
 var
   installed: Cardinal;
@@ -73,19 +76,10 @@ procedure InstallVCRedist();
 var
   ResultCode: Integer;
   TempFile: string;
-  DownloadOk: Integer;
 begin
   TempFile := ExpandConstant('{tmp}\vc_redist.x64.exe');
-  DownloadOk := URLDownloadToFile(0, 'https://aka.ms/vs/17/release/vc_redist.x64.exe', TempFile, 0, 0);
-  if DownloadOk = 0 then
-  begin
-    if not Exec(TempFile, '/install /quiet /norestart', '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
-      MsgBox('Could not run the Visual C++ Redistributable installer automatically. ' +
-             'Please install it manually from https://aka.ms/vs/17/release/vc_redist.x64.exe',
-             mbError, MB_OK);
-  end
-  else
-    MsgBox('Could not download the Visual C++ Redistributable automatically (no internet access?). ' +
+  if not Exec(TempFile, '/install /quiet /norestart', '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
+    MsgBox('Could not run the Visual C++ Redistributable installer automatically. ' +
            'Please install it manually from https://aka.ms/vs/17/release/vc_redist.x64.exe',
            mbError, MB_OK);
 end;

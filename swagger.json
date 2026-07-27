@@ -3,7 +3,7 @@
   "info": {
     "title": "eVascoAPI",
     "description": "VASCO d.o.o. ,  REST spletne storitve",
-    "version": "1.0 (08.06.2026 09:30)"
+    "version": "1.0 (27.07.2026 13:48)"
   },
   "paths": {
     "/api/v1/Avh/obracuni": {
@@ -404,6 +404,117 @@
           },
           "500": {
             "description": "Interna napaka na strežniku."
+          }
+        }
+      }
+    },
+    "/api/v1/EKPF/narocilo": {
+      "get": {
+        "tags": [
+          "EKPF"
+        ],
+        "summary": "Vrne seznam eKPF naročil z opcijskimi opombami in prilogami.\r\nNaročila so identificirana s sestavljenim ključem številka/leto.",
+        "parameters": [
+          {
+            "name": "StevilkaOd",
+            "in": "query",
+            "description": "Prvo naročilo v obliki stevilka.leto, na primer 1.2026.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "StevilkaDo",
+            "in": "query",
+            "description": "Zadnje naročilo v obliki stevilka.leto, na primer 100.2026.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "VrniOpombe",
+            "in": "query",
+            "description": "1 vrne opombe, 0 ali prazno opomb ne bere.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "VrniPriloge",
+            "in": "query",
+            "description": "1 vrne priloge, 0 ali prazno prilog ne bere.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "VrniLikvidacijo",
+            "in": "query",
+            "description": "1 vrne likvidacijo, 0 ali prazno likvidacije ne bere.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EkpfNarociloResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
           }
         }
       }
@@ -2487,6 +2598,52 @@
           },
           "500": {
             "description": "Interna napaka na strežniku."
+          }
+        }
+      }
+    },
+    "/api/v1/EKPFSifranti/likvidatorji": {
+      "get": {
+        "tags": [
+          "EKPFSifranti"
+        ],
+        "summary": "Vrne aktivne likvidatorje, ki so določeni v eKPF »da je likvidator«.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EkpfLikvidatorResponse"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
           }
         }
       }
@@ -5626,6 +5783,163 @@
           },
           "500": {
             "description": "Interna napaka na strežniku."
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "FA"
+        ],
+        "summary": "Azuriranje obstojece prevzemnice (Update)",
+        "requestBody": {
+          "description": "Podatki prevzemnice za azuriranje",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrevzemnicaPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/FA/prevzemnica/spremembaPostavk": {
+      "put": {
+        "tags": [
+          "FA"
+        ],
+        "summary": "Spreminjanje postavk prevzemnice (Update)",
+        "requestBody": {
+          "description": "Podatki za spreminjanje postavk na prevzemnici.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrevzemnicaPutVecPostavkBaseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrevzemnicaVecPostavkPutResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error"
           }
         }
       }
@@ -9309,6 +9623,7 @@
         ],
         "summary": "Vnos nove skupine artikla (Insert)",
         "requestBody": {
+          "description": "Podatki skupine artikla za vnos.\r\n            Če je tip številčenja 0, potem morate vnesti šifro artikla. Ta tip številčenja je PRIVZET.\r\n            Če je tip številčenja 1, potem morate za šifro artikla pustiti prazno (dodeljena bo naslednja prosta šifra)",
           "content": {
             "application/json": {
               "schema": {
@@ -14583,6 +14898,40 @@
             }
           },
           {
+            "name": "OdArtikla",
+            "in": "query",
+            "description": "Artikel\r\nšifra artikla od katerega delam poizvedbo",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "DoArtikla",
+            "in": "query",
+            "description": "Artikel\r\nšifra artikla do katerega delamo poizvedbo",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "OdDatuma",
+            "in": "query",
+            "description": "Datum od\r\nOd datuma za katerega delamo poizvedbo",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "DoDatuma",
+            "in": "query",
+            "description": "Datum do\r\nDo datuma za katerega delamo poizvedbo",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
             "name": "VsaNarocila",
             "in": "query",
             "description": "Vsa naročila\r\n1:  Vrne vsa naročila, tudi še so že poplnoma dobavljena\r\n0:  Vrne samo naročila, ki še niso popolnoma dobavljna",
@@ -15363,6 +15712,250 @@
           },
           "500": {
             "description": "Interna napaka na strežniku."
+          }
+        }
+      }
+    },
+    "/api/v1/FASifranti/hraHramba": {
+      "get": {
+        "tags": [
+          "FASifranti"
+        ],
+        "summary": "Seznam zapisov hrambe gum",
+        "parameters": [
+          {
+            "name": "AutoId",
+            "in": "query",
+            "description": "AUTO_ID zapisa. Podpira vec vrednosti locenih z vejico ali interval AUTO_ID_OD..AUTO_ID_DO.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Stevilka",
+            "in": "query",
+            "description": "Stevilka dokumenta. Podpira vec vrednosti locenih z vejico ali interval STEVILKA_OD..STEVILKA_DO.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Leto",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Registrska",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "SprejemOd",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "SprejemDo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "MestoHrambe",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "SamoNeizdane",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Seznam uspesno pridobljen.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HraHrambaResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Vneseni podatki so nepopolni. Vrne seznam napak",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Dostop do storitve ni avtoriziran (potrebna prijava ali pa ni pravic).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Dostop do storitve ni dovoljen.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Interna napaka na strezniku."
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "FASifranti"
+        ],
+        "summary": "Vnos novega zapisa hrambe gum (Insert)",
+        "requestBody": {
+          "description": "Podatki hrambe gum za vnos. AUTO_ID doloci baza.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HraHrambaPostRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Hramba gum uspesno vnesena.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HraHrambaPostResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Vneseni podatki so nepopolni. Vrne seznam napak",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Dostop do storitve ni avtoriziran (potrebna prijava ali pa ni pravic).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Interna napaka na strezniku."
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "FASifranti"
+        ],
+        "summary": "Azuriranje obstojecega zapisa hrambe gum (Update)",
+        "requestBody": {
+          "description": "Podatki hrambe gum za azuriranje. Vsa polja modela se upostevajo pri azuriranju.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HraHrambaPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Hramba gum uspesno azurirana."
+          },
+          "400": {
+            "description": "Vneseni podatki so nepopolni. Vrne seznam napak",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Dostop do storitve ni avtoriziran (potrebna prijava ali pa ni pravic).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Hramba gum ne obstaja.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Interna napaka na strezniku."
           }
         }
       }
@@ -17896,6 +18489,107 @@
         }
       }
     },
+    "/api/v1/KPF/narocilo": {
+      "get": {
+        "tags": [
+          "KPF"
+        ],
+        "summary": "Vrne seznam naročil s pozicijami, sklopi ter opcijskimi prilogami, opombami in likvidacijo.",
+        "parameters": [
+          {
+            "name": "StevilkaOd",
+            "in": "query",
+            "description": "Prvo naročilo v obliki stevilka.leto, na primer 1.2026.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "StevilkaDo",
+            "in": "query",
+            "description": "Zadnje naročilo v obliki stevilka.leto, na primer 100.2026.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "VrniPriloge",
+            "in": "query",
+            "description": "1 vrne priloge z vsebino Base64; 0 ali prazno prilog ne bere.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "VrniOpombe",
+            "in": "query",
+            "description": "1 vrne združene opombe; 0 ali prazno opomb ne bere.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "VrniLikvidacijo",
+            "in": "query",
+            "description": "1 vrne določene likvidatorje; 0 ali prazno likvidacije ne bere.",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Naročila so bila uspešno prebrana.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KpfNarociloResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Parametri filtra niso veljavni ali bi bilo rezultatov preveč.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Dostop do storitve ni avtoriziran.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Dostop do storitve ni dovoljen.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Interna napaka na strežniku."
+          }
+        }
+      }
+    },
     "/api/v1/KPF/placilo/PF": {
       "get": {
         "tags": [
@@ -19921,6 +20615,62 @@
                   "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/DelitevSMResponse"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Vnešeni podatki so nepopolni. Vrne seznam napak",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Dostop do storitve ni avtoriziran (potrebna prijava ali pa ni pravic).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Dostop do storitve ni dovoljen.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Interna napaka na strežniku."
+          }
+        }
+      }
+    },
+    "/api/v1/KPFSifranti/likvidatorji": {
+      "get": {
+        "tags": [
+          "KPFSifranti"
+        ],
+        "summary": "Vrne seznam likvidatorjev",
+        "responses": {
+          "200": {
+            "description": "Seznam uspešno pridobljen.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KpfLikvidatorResponse"
                   }
                 }
               }
@@ -37837,6 +38587,147 @@
         },
         "additionalProperties": false
       },
+      "EkpfLikvidatorResponse": {
+        "type": "object",
+        "properties": {
+          "uporabnik": {
+            "type": "string",
+            "nullable": true
+          },
+          "ime": {
+            "type": "string",
+            "nullable": true
+          },
+          "priimek": {
+            "type": "string",
+            "nullable": true
+          },
+          "naziv": {
+            "type": "string",
+            "nullable": true
+          },
+          "ePosta": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EkpfNarociloResponse": {
+        "type": "object",
+        "properties": {
+          "stevilka": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "leto": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "datumVnosa": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "datumNarocila": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "opis": {
+            "type": "string",
+            "nullable": true
+          },
+          "predracunStevilka": {
+            "type": "string",
+            "nullable": true
+          },
+          "predracunDatum": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "vrednostBrezDdv": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "skupajDdv": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "povezanZnesek": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "znesekZaZapiranje": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "narociloZaprto": {
+            "type": "boolean"
+          },
+          "letnoNarocilo": {
+            "type": "boolean"
+          },
+          "partner": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "skrbnik": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "izvajalec": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "stroskovnoMesto": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "stroskovnoMesto2": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "stroskovnoMesto3": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "utemeljitev": {
+            "type": "string",
+            "nullable": true
+          },
+          "pogodba": {
+            "type": "string",
+            "nullable": true
+          },
+          "opomba": {
+            "type": "string",
+            "nullable": true
+          },
+          "priloge": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrilogaDokument"
+            },
+            "nullable": true
+          },
+          "likvidacija": {
+            "$ref": "#/components/schemas/EKPFPrFakLikvidacija"
+          }
+        },
+        "additionalProperties": false
+      },
       "FALotPodatkiPostBaseRequest": {
         "type": "object",
         "properties": {
@@ -39616,6 +40507,562 @@
         "additionalProperties": false,
         "description": "Rezultat poizvedb po grupah tuj naziv"
       },
+      "HraHrambaPostRequest": {
+        "type": "object",
+        "properties": {
+          "stevilka": {
+            "maxLength": 8,
+            "type": "string",
+            "nullable": true
+          },
+          "leto": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "registrska": {
+            "maxLength": 20,
+            "type": "string",
+            "nullable": true
+          },
+          "sprejem": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "sprejel": {
+            "maxLength": 5,
+            "type": "string",
+            "nullable": true
+          },
+          "opombeSprejem": {
+            "type": "string",
+            "nullable": true
+          },
+          "mestoHrambe": {
+            "maxLength": 20,
+            "type": "string",
+            "nullable": true
+          },
+          "pnevmatika": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "pnevmatikaNaziv": {
+            "maxLength": 40,
+            "type": "string",
+            "nullable": true
+          },
+          "dimenzije": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "dimenzijePnevmatike": {
+            "maxLength": 60,
+            "type": "string",
+            "nullable": true
+          },
+          "kolicinaGum": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "platisca": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "dimenzijePlatisca": {
+            "maxLength": 20,
+            "type": "string",
+            "nullable": true
+          },
+          "kolicinaPlatisc": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "obraba": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "izdaja": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "izdal": {
+            "maxLength": 5,
+            "type": "string",
+            "nullable": true
+          },
+          "opombeIzdaja": {
+            "type": "string",
+            "nullable": true
+          },
+          "tipIzracuna": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "vrednostZDdv": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "tipIzdaje": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "cenaZDdv": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "prostoI1": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "pnevmatikaSlabaSprejem": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "vijakiSprejem": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "pokroviSprejem": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "pnevmatikaSlabaIzdaja": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "vijakiIzdaja": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "pokroviIzdaja": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "dimenzije1": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "dimenzijePnevmatike1": {
+            "maxLength": 60,
+            "type": "string",
+            "nullable": true
+          },
+          "kolicinaGum1": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "obraba1": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "dimenzijeArtikel": {
+            "maxLength": 18,
+            "type": "string",
+            "nullable": true
+          },
+          "dimenzijeArtikel1": {
+            "maxLength": 18,
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Vnos hrambe gum."
+      },
+      "HraHrambaPostResponse": {
+        "type": "object",
+        "properties": {
+          "autoId": {
+            "type": "integer",
+            "format": "int32",
+            "readOnly": true
+          },
+          "stevilka": {
+            "type": "string",
+            "nullable": true,
+            "readOnly": true
+          },
+          "leto": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "readOnly": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HraHrambaPutRequest": {
+        "type": "object",
+        "properties": {
+          "stevilka": {
+            "maxLength": 8,
+            "type": "string",
+            "nullable": true
+          },
+          "leto": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "registrska": {
+            "maxLength": 20,
+            "type": "string",
+            "nullable": true
+          },
+          "sprejem": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "sprejel": {
+            "maxLength": 5,
+            "type": "string",
+            "nullable": true
+          },
+          "opombeSprejem": {
+            "type": "string",
+            "nullable": true
+          },
+          "mestoHrambe": {
+            "maxLength": 20,
+            "type": "string",
+            "nullable": true
+          },
+          "pnevmatika": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "pnevmatikaNaziv": {
+            "maxLength": 40,
+            "type": "string",
+            "nullable": true
+          },
+          "dimenzije": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "dimenzijePnevmatike": {
+            "maxLength": 60,
+            "type": "string",
+            "nullable": true
+          },
+          "kolicinaGum": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "platisca": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "dimenzijePlatisca": {
+            "maxLength": 20,
+            "type": "string",
+            "nullable": true
+          },
+          "kolicinaPlatisc": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "obraba": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "izdaja": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "izdal": {
+            "maxLength": 5,
+            "type": "string",
+            "nullable": true
+          },
+          "opombeIzdaja": {
+            "type": "string",
+            "nullable": true
+          },
+          "tipIzracuna": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "vrednostZDdv": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "tipIzdaje": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "cenaZDdv": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "prostoI1": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "pnevmatikaSlabaSprejem": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "vijakiSprejem": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "pokroviSprejem": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "pnevmatikaSlabaIzdaja": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "vijakiIzdaja": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "pokroviIzdaja": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "dimenzije1": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "dimenzijePnevmatike1": {
+            "maxLength": 60,
+            "type": "string",
+            "nullable": true
+          },
+          "kolicinaGum1": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "obraba1": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "dimenzijeArtikel": {
+            "maxLength": 18,
+            "type": "string",
+            "nullable": true
+          },
+          "dimenzijeArtikel1": {
+            "maxLength": 18,
+            "type": "string",
+            "nullable": true
+          },
+          "autoId": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "description": "Azuriranje hrambe gum."
+      },
+      "HraHrambaResponse": {
+        "type": "object",
+        "properties": {
+          "autoId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "stevilka": {
+            "type": "string",
+            "nullable": true
+          },
+          "leto": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "registrska": {
+            "type": "string",
+            "nullable": true
+          },
+          "sprejem": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "sprejel": {
+            "type": "string",
+            "nullable": true
+          },
+          "opombeSprejem": {
+            "type": "string",
+            "nullable": true
+          },
+          "mestoHrambe": {
+            "type": "string",
+            "nullable": true
+          },
+          "pnevmatika": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "pnevmatikaNaziv": {
+            "type": "string",
+            "nullable": true
+          },
+          "dimenzije": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "dimenzijePnevmatike": {
+            "type": "string",
+            "nullable": true
+          },
+          "kolicinaGum": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "platisca": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "dimenzijePlatisca": {
+            "type": "string",
+            "nullable": true
+          },
+          "kolicinaPlatisc": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "obraba": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "izdaja": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "izdal": {
+            "type": "string",
+            "nullable": true
+          },
+          "opombeIzdaja": {
+            "type": "string",
+            "nullable": true
+          },
+          "tipIzracuna": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "vrednostZDdv": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "tipIzdaje": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "cenaZDdv": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "prostoI1": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "pnevmatikaSlabaSprejem": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "vijakiSprejem": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "pokroviSprejem": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "pnevmatikaSlabaIzdaja": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "vijakiIzdaja": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "pokroviIzdaja": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "dimenzije1": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "dimenzijePnevmatike1": {
+            "type": "string",
+            "nullable": true
+          },
+          "kolicinaGum1": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "obraba1": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "dimenzijeArtikel": {
+            "type": "string",
+            "nullable": true
+          },
+          "dimenzijeArtikel1": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "InterniPostBaseRequest": {
         "required": [
           "datum"
@@ -40951,6 +42398,10 @@
             "type": "integer",
             "description": "Šifra likvidatorja",
             "format": "int32"
+          },
+          "naziv": {
+            "type": "string",
+            "nullable": true
           },
           "vrstniRed": {
             "type": "integer",
@@ -42787,6 +44238,312 @@
               "$ref": "#/components/schemas/KPFBancniIzpisekPostavka"
             },
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "KpfLikvidatorResponse": {
+        "type": "object",
+        "properties": {
+          "sifra": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "naziv": {
+            "type": "string",
+            "nullable": true
+          },
+          "ePosta": {
+            "type": "string",
+            "nullable": true
+          },
+          "uporabnik": {
+            "type": "string",
+            "nullable": true
+          },
+          "nadomestni": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "tip": {
+            "type": "integer",
+            "description": "potrjevalec, likvidator",
+            "format": "int32"
+          },
+          "neaktiven": {
+            "type": "boolean",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "KpfNarociloHeaderResponse": {
+        "type": "object",
+        "properties": {
+          "stevilka": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "leto": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "datumVnosa": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "datumNarocila": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "opis": {
+            "type": "string",
+            "nullable": true
+          },
+          "predracunStevilka": {
+            "type": "string",
+            "nullable": true
+          },
+          "predracunDatum": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "vrednostBrezDdv": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "vrednostBrezDdv20": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "vrednostBrezDdv5": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "ddv8": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "ddv20": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "ddv5": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "dajatve": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "skupajDdv": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "skupnaVrednost": {
+            "type": "number",
+            "format": "decimal"
+          },
+          "povezanZnesek": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "znesekZaZapiranje": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "narociloZaprto": {
+            "type": "boolean"
+          },
+          "letnoNarocilo": {
+            "type": "boolean"
+          },
+          "skrbnik": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "izvajalec": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "stroskovnoMesto": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "stroskovnoMesto2": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "stroskovnoMesto3": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "skupinaLikvidacije": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "utemeljitev": {
+            "type": "string",
+            "nullable": true
+          },
+          "razlogZavrnitve": {
+            "type": "string",
+            "nullable": true
+          },
+          "pogodba": {
+            "type": "string",
+            "nullable": true
+          },
+          "uporabnik": {
+            "type": "string",
+            "nullable": true
+          },
+          "partner": {
+            "$ref": "#/components/schemas/KpfNarociloPartnerResponse"
+          }
+        },
+        "additionalProperties": false
+      },
+      "KpfNarociloPartnerResponse": {
+        "type": "object",
+        "properties": {
+          "sifra": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "naziv1": {
+            "type": "string",
+            "nullable": true
+          },
+          "naslov": {
+            "type": "string",
+            "nullable": true
+          },
+          "posta": {
+            "type": "string",
+            "nullable": true
+          },
+          "davcnaStevilka": {
+            "type": "string",
+            "nullable": true
+          },
+          "identifikacijskaStevilka": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "KpfNarociloPozicijaResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "stevilka": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "leto": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "zaporedna": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "kolicina": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "enota": {
+            "type": "string",
+            "nullable": true
+          },
+          "opis": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "KpfNarociloResponse": {
+        "type": "object",
+        "properties": {
+          "narocilo": {
+            "$ref": "#/components/schemas/KpfNarociloHeaderResponse"
+          },
+          "pozicije": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KpfNarociloPozicijaResponse"
+            },
+            "nullable": true
+          },
+          "sklopi": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KpfNarociloSklopResponse"
+            },
+            "nullable": true
+          },
+          "priloge": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrilogaDokument"
+            },
+            "nullable": true
+          },
+          "opomba": {
+            "type": "string",
+            "nullable": true
+          },
+          "likvidacija": {
+            "$ref": "#/components/schemas/KPFPrFakLikvidacija"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Celotno KPFW naročilo z njegovimi pozicijami, sklopi in opcijskimi prilogami."
+      },
+      "KpfNarociloSklopResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "stevilka": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "leto": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sklop": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false
@@ -51538,6 +53295,55 @@
         "additionalProperties": false,
         "description": "Base za post request"
       },
+      "PrevzemnicaPostavkaPutRequest": {
+        "required": [
+          "sifra",
+          "zs"
+        ],
+        "type": "object",
+        "properties": {
+          "dodatnaPolja": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DodatnoPolje"
+            },
+            "description": "Seznami dodatnih polj za vnos oz. ažuriranje",
+            "nullable": true
+          },
+          "zs": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sifra": {
+            "maxLength": 18,
+            "minLength": 1,
+            "type": "string"
+          },
+          "kolicina": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "nabavnaCena": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "rabat": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "stopnjaDdv": {
+            "maximum": 3,
+            "minimum": 0,
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "PrevzemnicaPostavkeLotResponse": {
         "type": "object",
         "properties": {
@@ -51676,6 +53482,108 @@
         },
         "additionalProperties": false
       },
+      "PrevzemnicaPutRequest": {
+        "required": [
+          "leto",
+          "stevilka"
+        ],
+        "type": "object",
+        "properties": {
+          "dodatnaPolja": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DodatnoPolje"
+            },
+            "description": "Seznami dodatnih polj za vnos oz. ažuriranje",
+            "nullable": true
+          },
+          "stevilka": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "leto": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "datum": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "dobavitelj": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "komercialist": {
+            "maxLength": 5,
+            "minLength": 0,
+            "type": "string",
+            "nullable": true
+          },
+          "skladisce": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "rabat1": {
+            "type": "number",
+            "format": "decimal",
+            "nullable": true
+          },
+          "dovoliPopravekZRacunom": {
+            "type": "boolean",
+            "default": false
+          },
+          "dovoliPodvojenoDobavnico": {
+            "type": "boolean",
+            "default": false
+          },
+          "dovoliPodvojenRacun": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "description": "Request za azuriranje obstojece prevzemnice."
+      },
+      "PrevzemnicaPutVecPostavkBaseRequest": {
+        "required": [
+          "leto",
+          "stevilka"
+        ],
+        "type": "object",
+        "properties": {
+          "stevilka": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "leto": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "dovoliPopravekZRacunom": {
+            "type": "boolean",
+            "default": false
+          },
+          "dovoliPodvojenoDobavnico": {
+            "type": "boolean",
+            "default": false
+          },
+          "dovoliPodvojenRacun": {
+            "type": "boolean",
+            "default": false
+          },
+          "postavke": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrevzemnicaPostavkaPutRequest"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "PrevzemnicaResponse": {
         "type": "object",
         "properties": {
@@ -51732,6 +53640,21 @@
         "type": "object",
         "properties": {
           "serijska": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "PrevzemnicaVecPostavkPutResponse": {
+        "type": "object",
+        "properties": {
+          "leto": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "stevilka": {
             "type": "string",
             "nullable": true
           }
@@ -52226,7 +54149,7 @@
             "nullable": true
           }
         },
-        "additionalProperties": { }
+        "additionalProperties": {}
       },
       "ProdajaKupcuResponse": {
         "type": "object",
@@ -55776,7 +57699,7 @@
   },
   "security": [
     {
-      "Bearer": [ ]
+      "Bearer": []
     }
   ]
 }
