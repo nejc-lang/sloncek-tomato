@@ -25,34 +25,6 @@ def _round_cena(vrednost: float, mesta: int = 5) -> float:
     return float(f"{vrednost:.{mesta}g}")
 
 
-def _fetch_ddv_lookup(client: EVascoClient, sifre: list[str]) -> dict[str, int]:
-    """stopnjaDdv ni v GET prevzemnica odgovoru; pridobi ga iz šifranta artiklov.
-
-    NOTE: prvotno je bilo predvideno, da se stopnjaDdv vzame iz postavk
-    povezanega DN, vendar se je pri testiranju izkazalo, da DN.postavke in
-    prevzemnica.postavke nimajo skupnih šifer (DN = naročeni artikli,
-    prevzemnica = dejansko prejeti artikli) - zato se stopnjaDdv pridobi
-    neposredno iz /api/v1/FASifranti/artikel (polje stopnjaDDV).
-    """
-    if not sifre:
-        return {}
-    artikli = client.get_artikli(sifre)
-    return {a["sifra"]: a.get("stopnjaDDV") for a in artikli if a.get("sifra") is not None}
-
-
-def _fetch_prodajna_cena_lookup(client: EVascoClient, sifre: list[str]) -> dict[str, float]:
-    """šifra artikla operacije -> urna postavka (FA_ARTIKEL.PRODAJNA_CENA, native polje `prodajnaCena`).
-
-    Uporablja se za cena_op: urna postavka dela se pridobi iz prodajne cene
-    šifre same operacije (npr. P50000 "P strošek za francosko solato"), ne iz
-    fiksne konfiguracijske vrednosti - potrjeno s strani uporabnika 2026-07-24.
-    """
-    if not sifre:
-        return {}
-    artikli = client.get_artikli(sifre)
-    return {a["sifra"]: a.get("prodajnaCena") for a in artikli if a.get("sifra") is not None}
-
-
 def _fetch_dodatno_polje_lookup(client: EVascoClient, sifre: list[str], polje_naziv: str) -> dict[str, Any]:
     """šifra artikla -> vrednost enega dodatnega polja (npr. PROSTO_R5, NABAVNA_CENA).
 
@@ -67,6 +39,19 @@ def _fetch_dodatno_polje_lookup(client: EVascoClient, sifre: list[str], polje_na
         for a in artikli
         if a.get("sifra") is not None
     }
+
+
+def _fetch_prodajna_cena_lookup(client: EVascoClient, sifre: list[str]) -> dict[str, float]:
+    """šifra artikla operacije -> urna postavka (FA_ARTIKEL.PRODAJNA_CENA, native polje `prodajnaCena`).
+
+    Uporablja se za cena_op: urna postavka dela se pridobi iz prodajne cene
+    šifre same operacije (npr. P50000 "P strošek za francosko solato"), ne iz
+    fiksne konfiguracijske vrednosti - potrjeno s strani uporabnika 2026-07-24.
+    """
+    if not sifre:
+        return {}
+    artikli = client.get_artikli(sifre)
+    return {a["sifra"]: a.get("prodajnaCena") for a in artikli if a.get("sifra") is not None}
 
 
 def _fetch_prodajne_cene_izdelka_lookup(client: EVascoClient, sifre: list[str]) -> dict[str, tuple[Any, Any]]:
@@ -99,7 +84,7 @@ def _fetch_normativ_lookup(client: EVascoClient, sifre: list[str]) -> dict[str, 
     element `normativ` = šifra postavke (ta, ki jo iščemo) in `artikel` =
     šifra sestavine - obratno od poimenovanja parametra. Zato se tu grupira
     po `normativ` polju, komponenta pa se bere iz `artikel` polja (glej
-    _prepare_new_prevzemnica).
+    _prepare_prevzemnica_update).
     """
     if not sifre:
         return {}
@@ -132,23 +117,27 @@ def _fetch_operacije_lookup(client: EVascoClient, sifre: list[str]) -> dict[str,
     return lookup
 
 
-def _prepare_new_prevzemnica(
-    client: EVascoClient, dn_stevilka: str, original: dict
+def _prepare_prevzemnica_update(
+    client: EVascoClient, original: dict
 ) -> tuple[dict, list[dict], list[str]]:
-    """Sestavi telo nove prevzemnice (Korak 2 POST body) + seznam lotPodatki zapisov + opozorila.
+    """Sestavi telo PUT posodobitve OBSTOJEČE prevzemnice + lotPodatki zapise + opozorila.
 
-    Vsi GET klici (artikel/normativ/normativOperacije, stopnjaDdv) se
-    izvedejo tukaj, v Koraku 1 - Korak 2 nato samo vzame že pripravljeno
-    telo iz seje in izvede zapise (glej BRIEF.md: LOT/DATUM_UPORABNOSTI/
-    CENA_VNESENA morajo biti znani vnaprej, POST/PUT proti eVasco pa je
-    ločeno, čisto pisalno dejanje).
+    Od 2026-07-27 se prevzemnica ne briše in ponovno ustvarja (glej stari
+    dvokoračni proces v git zgodovini) - namesto tega se z enim API PUT
+    klicem dopolnijo vrednosti na obstoječi prevzemnici: datum, komercialist,
+    skladisce, ins_drzava, ins_drzava_porekla, skladisce_za_odpis,
+    ins_vrsta_transporta (glava) ter lot, cena_vnesena (na vsaki postavki).
+    `datum_uporabnosti` gre še vedno ločeno preko FASifranti/lotPodatki (ni
+    veljavno polje na postavki prevzemnice, glej _fetch_dodatno_polje_lookup
+    klic za PROSTO_R5 spodaj).
 
-    `dn_stevilka` je številka DELOVNEGA NALOGA (ne prevzemnice/dobavnice) -
-    uporabi se v DOKUMENT_DOBAVNICA (glej spodaj). Potrjeno na živih podatkih
-    (prevzemnica 00604.2026, ki jo je ustvaril zunanji proces): tam ima
-    DOKUMENT_DOBAVNICA vrednost "50277 dn", kjer je 50277 DN številka, ne
-    00604 (številka same prevzemnice) - napačna zamenjava teh dveh je bila
-    najdena in popravljena 2026-07-24.
+    Telo NAMENOMA ne vsebuje `dobavitelj`/`rabat1`/`sifra`-specifičnih
+    kolicina/nabavnaCena/stopnjaDdv niti DOKUMENT_DOBAVNICA - te vrednosti se
+    ne spreminjajo (prevzemnica ostane ista, samo dopolnjena), zato se ne
+    pošiljajo v PUT telesu.
+
+    Izračuni (LOT, CENA_VNESENA, DATUM_UPORABNOSTI) so nespremenjeni glede na
+    prejšnjo verzijo - glej BRIEF.md.
     """
     warnings: list[str] = []
     original_postavke = original.get("postavke") or []
@@ -157,7 +146,6 @@ def _prepare_new_prevzemnica(
     original_datum = datetime.fromisoformat(original["datum"])
     lot = original_datum.strftime("%d%m%y")
 
-    ddv_lookup = _fetch_ddv_lookup(client, sifre)
     prosto_r5_lookup = _fetch_dodatno_polje_lookup(client, sifre, "PROSTO_R5")
     normativ_lookup = _fetch_normativ_lookup(client, sifre)
     operacije_lookup = _fetch_operacije_lookup(client, sifre)
@@ -185,8 +173,6 @@ def _prepare_new_prevzemnica(
 
         postavka_body: dict[str, Any] = {
             "sifra": sifra,
-            "kolicina": p["kolicina"],
-            "nabavnaCena": p["cena"],
             "dodatnaPolja": [{"naziv": "LOT", "vrednost": lot}],
         }
 
@@ -264,9 +250,6 @@ def _prepare_new_prevzemnica(
                         f"od najnižje prodajne cene ({min_prodajna_cena}) - izdelek se prodaja z izgubo."
                     )
 
-        stopnja_ddv = ddv_lookup.get(sifra)
-        if stopnja_ddv is not None:
-            postavka_body["stopnjaDdv"] = stopnja_ddv
         postavke_body.append(postavka_body)
 
         lot_zapisi[(sifra, lot)] = {
@@ -277,16 +260,13 @@ def _prepare_new_prevzemnica(
 
     body = {
         "datum": original["datum"],
-        "dobavitelj": original["dobavitelj"],
         "komercialist": "011",
         "skladisce": 11,
-        "rabat1": 0.0,
         "dodatnaPolja": [
             {"naziv": "INS_DRZAVA", "vrednost": 705},
             {"naziv": "INS_DRZAVA_POREKLA", "vrednost": 705},
             {"naziv": "SKLADISCE_ZA_ODPIS", "vrednost": 11},
             {"naziv": "INS_VRSTA_TRANSPORTA", "vrednost": 3},
-            {"naziv": "DOKUMENT_DOBAVNICA", "vrednost": f"{dn_stevilka} DN"},
         ],
         "postavke": postavke_body,
     }
@@ -294,8 +274,8 @@ def _prepare_new_prevzemnica(
     return body, list(lot_zapisi.values()), warnings
 
 
-def run_step1() -> dict:
-    """Korak 1: poišče nove DN (FAKTURIRANA=7, SKLADISCE=11) in njihove prevzemnice.
+def run() -> dict:
+    """Poišče nove DN (FAKTURIRANA=7, SKLADISCE=11) in za vsakega z enim PUT klicem posodobi njegovo prevzemnico.
 
     Datumski razpon je vedno danes-1..danes (pokrije primer, ko se program
     ne zažene točno vsak dan). Ker znotraj tega razpona številke DN niso
@@ -303,9 +283,13 @@ def run_step1() -> dict:
     obdelanim DN ne opira na "zadnjo številko" (x1), ampak na persistenten
     seznam natančnih ključev (`stevilka.leto`) - glej storage.load_obdelani_dn.
 
-    Za vsak DN se v tem koraku takoj izračuna tudi celotno telo nove
-    prevzemnice (LOT, DATUM_UPORABNOSTI, CENA_VNESENA - vsi GET klici), da
-    Korak 2 samo še izvede pisalne klice nad že pripravljenimi podatki.
+    Za razliko od prejšnjega dvokoračnega procesa (Korak 1: pripravi +
+    izpiši seznam za ročni izbris, Korak 2: ročno sproženo kreiranje novih
+    prevzemnic) gre zdaj vse v EN korak: obstoječa prevzemnica se s PUT
+    klicem dopolni na mestu, brisanje/ponovno ustvarjanje ni več potrebno.
+    DN se v `obdelani_dn` doda ŠELE ob uspešni posodobitvi - DN z napako
+    ostane zunaj seznama in se samodejno poskusi znova ob naslednjem zagonu
+    (PUT je idempotenten, ponovni poskus ne podvoji zapisov).
     """
     client = EVascoClient()
     try:
@@ -333,7 +317,7 @@ def run_step1() -> dict:
             return {
                 "status": "ok",
                 "message": "Ni novih delovnih nalogov za obdelavo.",
-                "prevzemnice_za_izbris": [],
+                "results": [],
             }
 
         obdelani = storage.load_obdelani_dn()
@@ -347,31 +331,26 @@ def run_step1() -> dict:
             return {
                 "status": "ok",
                 "message": "Ni novih delovnih nalogov za obdelavo.",
-                "prevzemnice_za_izbris": [],
+                "results": [],
             }
 
-        items: list[dict] = []
-        prevzemnice_za_izbris: list[str] = []
+        results: list[dict] = []
         warnings: list[str] = []
-        processed_keys: set[str] = set()
+
+        if settings.PUT_PREVZEMNICA_DRY_RUN:
+            warnings.append(
+                "TESTNO OBDOBJE: PUT /api/v1/FA/prevzemnica še ni objavljen v swaggerju, zato PUT klic ni bil "
+                "izveden - prevzemnice spodaj so samo pripravljene/arhivirane, NISO dejansko posodobljene."
+            )
 
         for dn in novi_dn:
             dn_stevilka_raw = dn.get("stevilka")
-            processed_keys.add(dn_key(dn))
-
             dn_leto = dn.get("leto", letosnje_leto)
             pre_stevilka_raw = _get_dodatno_polje(dn.get("dodatnaPolja"), "PRE_STEVILKA")
 
             if not pre_stevilka_raw:
                 warnings.append(f"DN {dn_stevilka_raw}: manjka PRE_STEVILKA, prevzemnice ni bilo mogoče poiskati.")
-                items.append(
-                    {
-                        "dn": dn,
-                        "pre_stevilka": None,
-                        "prevzemnica": None,
-                        "status": "brez_pre_stevilke",
-                    }
-                )
+                results.append({"dn": dn_stevilka_raw, "pre_stevilka": None, "status": "brez_pre_stevilke"})
                 continue
 
             pre_stevilka = str(pre_stevilka_raw).strip()
@@ -381,155 +360,33 @@ def run_step1() -> dict:
                 prevzemnica = client.get_prevzemnica_by_stevilka(stevilka_leto)
             except Exception as exc:  # noqa: BLE001 - surface per-item error, continue with others
                 warnings.append(f"DN {dn_stevilka_raw}: napaka pri pridobivanju prevzemnice {pre_stevilka}: {exc}")
-                items.append(
-                    {
-                        "dn": dn,
-                        "pre_stevilka": pre_stevilka,
-                        "prevzemnica": None,
-                        "status": "napaka_prevzemnica",
-                    }
-                )
+                results.append({"dn": dn_stevilka_raw, "pre_stevilka": pre_stevilka, "status": "napaka_prevzemnica", "error": str(exc)})
                 continue
 
             if not prevzemnica:
                 warnings.append(f"DN {dn_stevilka_raw}: prevzemnica {pre_stevilka} ni bila najdena.")
-                items.append(
-                    {
-                        "dn": dn,
-                        "pre_stevilka": pre_stevilka,
-                        "prevzemnica": None,
-                        "status": "prevzemnica_ni_najdena",
-                    }
-                )
+                results.append({"dn": dn_stevilka_raw, "pre_stevilka": pre_stevilka, "status": "prevzemnica_ni_najdena"})
                 continue
 
             try:
-                novo_telo, lot_zapisi, cena_warnings = _prepare_new_prevzemnica(
-                    client, str(dn_stevilka_raw), prevzemnica[0]
-                )
+                body, lot_zapisi, cena_warnings = _prepare_prevzemnica_update(client, prevzemnica[0])
                 warnings.extend(cena_warnings)
             except Exception as exc:  # noqa: BLE001 - surface per-item error, continue with others
                 warnings.append(
                     f"DN {dn_stevilka_raw}: napaka pri izračunu podatkov za prevzemnico {pre_stevilka}: {exc}"
                 )
-                items.append(
-                    {
-                        "dn": dn,
-                        "pre_stevilka": pre_stevilka,
-                        "prevzemnica": prevzemnica,
-                        "status": "napaka_izracuna",
-                    }
-                )
-                continue
-
-            items.append(
-                {
-                    "dn": dn,
-                    "pre_stevilka": pre_stevilka,
-                    "prevzemnica": prevzemnica,
-                    "novo_telo": novo_telo,
-                    "lot_zapisi": lot_zapisi,
-                    "status": "pripravljeno",
-                }
-            )
-            prevzemnice_za_izbris.append(pre_stevilka)
-
-        session = {
-            "session_id": storage.new_session_id(),
-            "created_at": datetime.now().isoformat(),
-            "status": storage.STATUS_WAITING,
-            "leto": letosnje_leto,
-            "items": items,
-            "warnings": warnings,
-        }
-        storage.save_session(session)
-
-        # Posodobi seznam obdelanih DN takoj po shranjevanju podatkov - ne
-        # šele po Koraku 2 - da se prepreči ponovna obdelava istih DN ob
-        # naslednjem zagonu Koraka 1, tudi če Korak 2 še ni bil izveden.
-        storage.add_obdelani_dn(processed_keys)
-
-        return {
-            "status": "ok",
-            "message": f"Najdenih {len(novi_dn)} DN, {len(prevzemnice_za_izbris)} prevzemnic za izbris.",
-            "prevzemnice_za_izbris": prevzemnice_za_izbris,
-            "warnings": warnings,
-            "session_id": session["session_id"],
-        }
-    finally:
-        client.close()
-
-
-def run_step2() -> dict:
-    """Korak 2: za vsako pripravljeno prevzemnico iz zadnje cakajoce_korak2 seje izvede zapise.
-
-    Telo nove prevzemnice in lotPodatki zapisi so v celoti pripravljeni že v
-    Koraku 1 (glej _prepare_new_prevzemnica) - Korak 2 samo izvede pisalne
-    klice proti eVasco.
-
-    PRODUKCIJA (od 2026-07-24): pisalna klica proti eVasco
-    (client.create_lot_podatki/update_lot_podatki in
-    client.create_prevzemnica) sta AKTIVNA - dejansko ustvarita/posodobijo
-    zapise v produkcijskem eVasco. Pred vsakim lotPodatki zapisom se z
-    client.get_lot_podatki preveri obstoječe stanje (glej lot_podatki_nacrt),
-    da se izbere POST/PUT/brez sprememb. Pripravljeni podatki (vključno s to
-    odločitvijo in dejanskim odgovorom create_prevzemnica) se še vedno
-    zapišejo v izhodne JSON datoteke (data/izhodni_zahtevki/) - to služi kot
-    arhiv in sledljivost delovanja aplikacije.
-
-    Idempotentno: postavke že označene kot "uspesno" se ne ponovijo, tako da
-    je mogoče Korak 2 varno ponovno sprožiti po delnem neuspehu.
-    """
-    session = storage.find_latest_session_with_status(storage.STATUS_WAITING)
-    if session is None:
-        return {
-            "status": "error",
-            "message": "Ni seje s statusom 'čakajoče korak 2'. Najprej zaženite Korak 1.",
-        }
-
-    client = EVascoClient()
-    client.authenticate()
-
-    results: list[dict] = []
-    all_success = True
-
-    try:
-        for item in session["items"]:
-            if item.get("status") != "pripravljeno":
-                continue  # ni prevzemnice za ta DN (manjka PRE_STEVILKA ali napaka v Koraku 1)
-
-            pre_stevilka = item["pre_stevilka"]
-
-            if item.get("korak2_status") == "uspesno":
-                results.append(
-                    {
-                        "pre_stevilka": pre_stevilka,
-                        "status": "uspesno (predhodno)",
-                        **item.get("korak2_result", {}),
-                    }
-                )
-                continue
-
-            body = item.get("novo_telo")
-            lot_zapisi = item.get("lot_zapisi") or []
-            if not body:
-                all_success = False
-                item["korak2_status"] = "napaka"
-                item["korak2_error"] = "Manjka pripravljeno telo iz Koraka 1."
-                results.append({"pre_stevilka": pre_stevilka, "status": "napaka", "error": item["korak2_error"]})
+                results.append({"dn": dn_stevilka_raw, "pre_stevilka": pre_stevilka, "status": "napaka_izracuna", "error": str(exc)})
                 continue
 
             try:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
                 # --- LOT / DATUM_UPORABNOSTI: FASifranti/lotPodatki ---
-                # Preverba (GET client.get_lot_podatki) je namerno ŽIVA, ne
-                # zakomentirana - bralni klic je varen in pove, ali bi dejanski
-                # zapis (spodaj še zakomentiran) sprožil POST (nov zapis), PUT
-                # (obstoječ zapis, druga vrednost) ali nič (obstoječa vrednost
-                # je že enaka) - arhivska datoteka mora vsebovati TO odločitev
-                # in TOČNO telo, ki bi bilo poslano, da je mogoče preveriti
-                # pravilnost pred odklepom dejanskih pisalnih klicev.
+                # Preverba (GET client.get_lot_podatki) pove, ali bi dejanski
+                # zapis sprožil POST (nov zapis), PUT (obstoječ zapis, druga
+                # vrednost) ali nič (obstoječa vrednost je že enaka) -
+                # arhivska datoteka mora vsebovati TO odločitev in TOČNO
+                # telo, ki je bilo poslano.
                 lot_podatki_nacrt: list[dict[str, Any]] = []
                 for zapis in lot_zapisi:
                     obstojeci = client.get_lot_podatki(zapis["sifra"], zapis["lot"])
@@ -546,46 +403,66 @@ def run_step2() -> dict:
                     elif akcija == "nov_zapis (POST)":
                         client.create_lot_podatki(zapis)
 
-                # --- Nova prevzemnica: FA/prevzemnica ---
-                response = client.create_prevzemnica(body)
+                # --- Posodobitev obstoječe prevzemnice: PUT FA/prevzemnica ---
+                # TESTNO OBDOBJE (settings.PUT_PREVZEMNICA_DRY_RUN, privzeto
+                # True dokler eVasco ne objavi PUT-a v swaggerju): dejanski
+                # PUT klic se PRESKOČI - telo se samo izračuna in arhivira, da
+                # je mogoče natančno preveriti, kaj bi bilo poslano. DN se v
+                # tem primeru NAMENOMA ne doda v obdelani_dn (glej spodaj), da
+                # se enkrat ko je PUT_PREVZEMNICA_DRY_RUN=False samodejno
+                # dejansko obdela, brez ročnega posega.
+                if settings.PUT_PREVZEMNICA_DRY_RUN:
+                    response = None
+                    status = "pripravljeno"
+                else:
+                    response = client.update_prevzemnica(stevilka_leto, body)
+                    status = "uspesno"
 
-                # DATUM_UPORABNOSTI ni veljavno dodatno polje na postavki prevzemnice
-                # (potrjeno na živih podatkih 2026-07-24 - odsoten iz
-                # /api/v1/FA/prevzemnica/postavka/polja) - zapiše se izključno v
-                # FA_LOT_PODATKI preko ločenega lotPodatki klica, zato mora biti v
-                # arhivski datoteki eksplicitno viden poleg telesa prevzemnice, sicer
-                # v arhivu ni sledi o datumu uporabnosti.
-                output_path = storage.output_request_path(pre_stevilka, timestamp)
+                output_path = storage.output_update_path(pre_stevilka, timestamp)
                 output_path.write_text(
-                    json.dumps({"prevzemnica": body, "lotPodatki": lot_podatki_nacrt}, ensure_ascii=False, indent=2),
+                    json.dumps(
+                        {
+                            "dry_run": settings.PUT_PREVZEMNICA_DRY_RUN,
+                            "prevzemnica": body,
+                            "lotPodatki": lot_podatki_nacrt,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
                     encoding="utf-8",
                 )
 
-                korak2_result: dict[str, Any] = {
+                result: dict[str, Any] = {
+                    "dn": dn_stevilka_raw,
+                    "pre_stevilka": pre_stevilka,
+                    "status": status,
                     "izhodna_datoteka": str(output_path),
                 }
                 if response is not None:
-                    korak2_result["nova_stevilka"] = response.get("stevilka")
-                    korak2_result["leto"] = response.get("leto")
+                    result["odgovor"] = response
+                results.append(result)
 
-                item["korak2_status"] = "uspesno"
-                item["korak2_result"] = korak2_result
-                results.append({"pre_stevilka": pre_stevilka, "status": "uspesno", **korak2_result})
+                if status == "uspesno":
+                    storage.add_obdelani_dn({dn_key(dn)})
             except Exception as exc:  # noqa: BLE001 - collect per-item error, continue with others
-                all_success = False
-                item["korak2_status"] = "napaka"
-                item["korak2_error"] = str(exc)
-                results.append({"pre_stevilka": pre_stevilka, "status": "napaka", "error": str(exc)})
+                warnings.append(f"DN {dn_stevilka_raw}: napaka pri posodobitvi prevzemnice {pre_stevilka}: {exc}")
+                results.append({"dn": dn_stevilka_raw, "pre_stevilka": pre_stevilka, "status": "napaka", "error": str(exc)})
 
-        if all_success:
-            session["status"] = storage.STATUS_DONE
-        storage.save_session(session)
+        uspesni_statusi = ("uspesno", "pripravljeno")
+        vse_uspesno = all(r["status"] in uspesni_statusi for r in results)
+        obdelanih = sum(1 for r in results if r["status"] in uspesni_statusi)
+
+        if settings.PUT_PREVZEMNICA_DRY_RUN:
+            sporocilo = f"Najdenih {len(novi_dn)} DN, {obdelanih} prevzemnic pripravljenih (PUT testno preskočen)."
+        else:
+            sporocilo = f"Najdenih {len(novi_dn)} DN, {obdelanih} prevzemnic uspešno posodobljenih."
 
         return {
             "status": "ok",
-            "session_id": session["session_id"],
+            "message": sporocilo,
             "results": results,
-            "vse_uspesno": all_success,
+            "warnings": warnings,
+            "vse_uspesno": vse_uspesno,
         }
     finally:
         client.close()

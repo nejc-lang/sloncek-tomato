@@ -9,7 +9,12 @@ a = Analysis(
     [str(ROOT / "gui" / "main.py")],
     pathex=[str(ROOT)],
     binaries=[],
-    datas=[],
+    # Vseh 6 okvirjev (ne samo ikona) - uporabljajo se tudi za animacijo
+    # slončka po koncu obdelave (glej gui/main.py, ANIMATION_FRAME_PATHS).
+    datas=[
+        (str(p), "pic-sloncek")
+        for p in sorted((ROOT / "gui" / "pic-sloncek").glob("flying_elephant_frame_*.png"))
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

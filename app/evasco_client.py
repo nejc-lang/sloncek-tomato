@@ -95,8 +95,8 @@ class EVascoClient:
         self._raise_with_body(response)
         return response
 
-    def put(self, path: str, json: dict | None = None) -> httpx.Response:
-        response = self._client.put(path, json=json, headers=self._auth_headers())
+    def put(self, path: str, json: dict | None = None, params: dict | None = None) -> httpx.Response:
+        response = self._client.put(path, params=params, json=json, headers=self._auth_headers())
         self._raise_with_body(response)
         return response
 
@@ -209,12 +209,24 @@ class EVascoClient:
         """PUT /api/v1/FASifranti/lotPodatki - ažurira obstoječ šifra+lot zapis."""
         self.put("/api/v1/FASifranti/lotPodatki", json=body)
 
-    def create_prevzemnica(self, body: dict) -> dict:
-        """POST /api/v1/FA/prevzemnica - kreira novo prevzemnico.
+    def update_prevzemnica(self, stevilka_leto: str, body: dict) -> dict | None:
+        """PUT /api/v1/FA/prevzemnica - posodobi OBSTOJEČO prevzemnico (dopolni polja).
 
-        Aktivno se kliče iz app/process.py::run_step2 (produkcija od 2026-07-24).
+        TODO(preveriti ob objavi PUT-a v swaggerju, od 2026-07-27 še ni
+        dokumentiran): natančna pot/parameter za identifikacijo ciljne
+        prevzemnice (tu privzeto enak vzorec kot pri GET-u,
+        `StevilkaOd`/`StevilkaDo`, glej get_prevzemnica_by_stevilka) in
+        natančna oblika telesa. Telo naj vsebuje samo polja, ki se dejansko
+        spreminjajo (glava: datum/komercialist/skladisce/dodatnaPolja;
+        postavke identificirane po `sifra`, z dodatnaPolja LOT/CENA_VNESENA)
+        - PUT tu pomeni delno dopolnjevanje obstoječega zapisa, ne zamenjavo
+        celotne prevzemnice.
         """
-        return self.post("/api/v1/FA/prevzemnica", json=body).json()
+        params = {"StevilkaOd": stevilka_leto, "StevilkaDo": stevilka_leto}
+        response = self.put("/api/v1/FA/prevzemnica", json=body, params=params)
+        if not response.content:
+            return None
+        return response.json()
 
     def close(self) -> None:
         self._client.close()

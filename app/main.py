@@ -4,7 +4,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.process import run_step1, run_step2
+from app.process import run
 
 app = FastAPI(title="DN-PREVZEMNICA-Tomato")
 
@@ -28,17 +28,9 @@ def root():
     return {"status": "ok", "service": "DN-PREVZEMNICA-Tomato"}
 
 
-@app.post("/api/step1", dependencies=[Depends(require_api_key)])
-def step1():
+@app.post("/api/obdelaj", dependencies=[Depends(require_api_key)])
+def obdelaj():
     try:
-        return JSONResponse(content=run_step1())
-    except Exception as exc:  # noqa: BLE001 - surface any error to the GUI log
-        return JSONResponse(status_code=500, content={"status": "error", "message": str(exc)})
-
-
-@app.post("/api/step2", dependencies=[Depends(require_api_key)])
-def step2():
-    try:
-        return JSONResponse(content=run_step2())
+        return JSONResponse(content=run())
     except Exception as exc:  # noqa: BLE001 - surface any error to the GUI log
         return JSONResponse(status_code=500, content={"status": "error", "message": str(exc)})

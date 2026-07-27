@@ -5,8 +5,8 @@ from pathlib import Path
 
 import httpx
 from dotenv import load_dotenv
-from PySide6.QtCore import QThread, Signal
-from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
+from PySide6.QtCore import QSize, QThread, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QIcon, QPixmap, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -41,6 +41,17 @@ load_dotenv(_env_dir / ".env")
 API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8090")
 API_KEY = os.environ.get("API_KEY", "")
 
+# Ikona aplikacije (gui/pic-sloncek/) - v razvojnem zagonu leži poleg te
+# datoteke, v PyInstaller onefile .exe pa se izvleče v začasno mapo
+# sys._MEIPASS (glej gui/gui.spec, datas=[...]) - zato NI poleg .exe kot
+# .env (glej opombo o _env_dir zgoraj).
+if getattr(sys, "frozen", False):
+    _resource_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+else:
+    _resource_dir = Path(__file__).resolve().parent
+ICON_PATH = _resource_dir / "pic-sloncek" / "flying_elephant_frame_1.png"
+ANIMATION_FRAME_PATHS = [_resource_dir / "pic-sloncek" / f"flying_elephant_frame_{i}.png" for i in range(1, 7)]
+
 
 class ApiWorker(QThread):
     finished_with_result = Signal(str, dict)
@@ -70,16 +81,31 @@ class ApiWorker(QThread):
 
 
 class MainWindow(QMainWindow):
+    BUTTON_TEXT = "Izpolni\nprevzemnice"
+    BUTTON_SIZE = QSize(300, 250)
+    # Trajanje enega okvirja animacije slončka in premor med posameznimi
+    # ponovitvami (3x, 1s premor med njimi - glej _start_elephant_animation).
+    ANIM_FRAME_MS = 120
+    ANIM_LOOPS = 3
+    ANIM_LOOP_PAUSE_MS = 1000
+
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("DN-PREVZEMNICA-Tomato")
+        self.setWindowTitle("Slonček")
+        self.setWindowIcon(QIcon(str(ICON_PATH)))
         self.resize(700, 500)
 
-        self.step1_button = QPushButton("Korak 1 - Poišči DN in prevzemnice")
-        self.step1_button.clicked.connect(self.on_step1_clicked)
-
-        self.step2_button = QPushButton("Korak 2 - Kreiraj nove prevzemnice")
-        self.step2_button.clicked.connect(self.on_step2_clicked)
+        self.obdelaj_button = QPushButton(self.BUTTON_TEXT)
+        self.obdelaj_button.setFixedSize(self.BUTTON_SIZE)
+        # 1px viden rob (barva sledi trenutni Qt paleti - light/dark) + 8px
+        # radij, enak zaokrožitvi robov okna v Windows 11. Samo
+        # `border-radius` (brez `border`) na nekaterih stilih/temah ne izriše
+        # nobenega vidnega roba, zato je `border` tu eksplicitno naveden.
+        self.obdelaj_button.setStyleSheet(
+            "QPushButton { text-align: center; border: 1px solid palette(mid); border-radius: 8px; }"
+        )
+        self.obdelaj_button.setIconSize(self.BUTTON_SIZE - QSize(40, 40))
+        self.obdelaj_button.clicked.connect(self.on_obdelaj_clicked)
 
         self.progress = QProgressBar()
         self.progress.setRange(0, 0)
@@ -94,8 +120,28 @@ class MainWindow(QMainWindow):
         self.clear_log_button.clicked.connect(self.on_clear_log_clicked)
 
         button_row = QHBoxLayout()
-        button_row.addWidget(self.step1_button)
-        button_row.addWidget(self.step2_button)
+        button_row.addStretch(1)
+        button_row.addWidget(self.obdelaj_button)
+        button_row.addStretch(1)
+
+        # Slikovni okvirji za animacijo slončka, prikazano V GUMBU (namesto
+        # besedila) po koncu obdelave - naložijo se enkrat vnaprej (ne ob
+        # vsakem predvajanju), skalirani na velikost ikone gumba. Manjkajoča/
+        # pokvarjena datoteka (QPixmap.isNull()) se izloči, da animacija ne
+        # pade, če kakšen okvir manjka.
+        icon_size = self.obdelaj_button.iconSize()
+        self._anim_frames = [
+            pixmap
+            for path in ANIMATION_FRAME_PATHS
+            for pixmap in [
+                QPixmap(str(path)).scaled(icon_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            ]
+            if not pixmap.isNull()
+        ]
+        self._anim_frame_index = 0
+        self._anim_loop_count = 0
+        self._anim_timer = QTimer(self)
+        self._anim_timer.timeout.connect(self._on_animation_tick)
 
         layout = QVBoxLayout()
         layout.addLayout(button_row)
@@ -135,25 +181,48 @@ class MainWindow(QMainWindow):
         self.log_view.ensureCursorVisible()
 
     def _set_busy(self, busy: bool) -> None:
-        self.step1_button.setEnabled(not busy)
-        self.step2_button.setEnabled(not busy)
+        self.obdelaj_button.setEnabled(not busy)
         self.progress.setVisible(busy)
 
-    def on_step1_clicked(self) -> None:
+    def _start_elephant_animation(self) -> None:
+        """Po končani obdelavi 3x predvaja animacijo slončka V GUMBU (namesto besedila), s 1s premorom med ponovitvami."""
+        if not self._anim_frames:
+            return
+        self._anim_loop_count = 0
+        self._anim_frame_index = 0
+        self.obdelaj_button.setEnabled(False)
+        self.obdelaj_button.setText("")
+        self.obdelaj_button.setIcon(QIcon(self._anim_frames[0]))
+        self._anim_timer.start(self.ANIM_FRAME_MS)
+
+    def _on_animation_tick(self) -> None:
+        self._anim_frame_index += 1
+        if self._anim_frame_index >= len(self._anim_frames):
+            self._anim_timer.stop()
+            self._anim_loop_count += 1
+            if self._anim_loop_count >= self.ANIM_LOOPS:
+                self._finish_elephant_animation()
+                return
+            QTimer.singleShot(self.ANIM_LOOP_PAUSE_MS, self._start_next_animation_loop)
+            return
+        self.obdelaj_button.setIcon(QIcon(self._anim_frames[self._anim_frame_index]))
+
+    def _start_next_animation_loop(self) -> None:
+        self._anim_frame_index = 0
+        self.obdelaj_button.setIcon(QIcon(self._anim_frames[0]))
+        self._anim_timer.start(self.ANIM_FRAME_MS)
+
+    def _finish_elephant_animation(self) -> None:
+        self.obdelaj_button.setIcon(QIcon())
+        self.obdelaj_button.setText(self.BUTTON_TEXT)
+        self.obdelaj_button.setEnabled(True)
+
+    def on_obdelaj_clicked(self) -> None:
         self._set_busy(True)
-        self.status_label.setText("Korak 1 v teku...")
-        self.append_log(f"POST {API_BASE_URL}/api/step1")
+        self.status_label.setText("Obdelava v teku...")
+        self.append_log(f"POST {API_BASE_URL}/api/obdelaj")
 
-        self.worker = ApiWorker("/api/step1")
-        self.worker.finished_with_result.connect(self.on_finished)
-        self.worker.start()
-
-    def on_step2_clicked(self) -> None:
-        self._set_busy(True)
-        self.status_label.setText("Korak 2 v teku...")
-        self.append_log(f"POST {API_BASE_URL}/api/step2")
-
-        self.worker = ApiWorker("/api/step2")
+        self.worker = ApiWorker("/api/obdelaj")
         self.worker.finished_with_result.connect(self.on_finished)
         self.worker.start()
 
@@ -165,15 +234,14 @@ class MainWindow(QMainWindow):
             message = result.get("message", "Neznana napaka")
             self.append_log("NAPAKA: " + message)
             QMessageBox.critical(self, "Napaka", message)
+            self._start_elephant_animation()
             return
 
-        if endpoint == "/api/step1":
-            self._handle_step1_result(result)
-        else:
-            self._handle_step2_result(result)
+        self._handle_obdelaj_result(result)
+        self._start_elephant_animation()
 
-    def _handle_step1_result(self, result: dict) -> None:
-        self.status_label.setText("Korak 1 zaključen.")
+    def _handle_obdelaj_result(self, result: dict) -> None:
+        self.status_label.setText("Obdelava zaključena.")
         self.append_log("OK: " + result.get("message", ""))
 
         for warning in result.get("warnings", []):
@@ -182,47 +250,32 @@ class MainWindow(QMainWindow):
             else:
                 self.append_log("OPOZORILO: " + warning)
 
-        prevzemnice = result.get("prevzemnice_za_izbris", [])
-        if not prevzemnice:
-            QMessageBox.information(
-                self, "Korak 1", result.get("message", "Ni novih delovnih nalogov za obdelavo.")
-            )
-            return
-
-        seznam = "\n".join(prevzemnice)
-        QMessageBox.information(
-            self,
-            "Korak 1 - izbrišite prevzemnice",
-            f"Izbrišite naslednje prevzemnice v eVasco sistemu:\n\n{seznam}\n\n"
-            "Ko jih izbrišete, sprožite Korak 2.",
-        )
-
-    def _handle_step2_result(self, result: dict) -> None:
-        self.status_label.setText("Korak 2 zaključen.")
-
         lines = []
         for r in result.get("results", []):
-            if r.get("status", "").startswith("uspesno"):
-                if r.get("nova_stevilka"):
-                    lines.append(f"{r['pre_stevilka']} -> nova prevzemnica {r['nova_stevilka']}/{r.get('leto')}")
-                else:
-                    lines.append(f"{r['pre_stevilka']} -> obdelano (izhodna datoteka: {r.get('izhodna_datoteka', '')})")
+            if r.get("status") == "uspesno":
+                lines.append(f"{r['pre_stevilka']} -> posodobljeno (izhodna datoteka: {r.get('izhodna_datoteka', '')})")
+            elif r.get("status") == "pripravljeno":
+                lines.append(
+                    f"{r['pre_stevilka']} -> pripravljeno, PUT testno preskočen "
+                    f"(izhodna datoteka: {r.get('izhodna_datoteka', '')})"
+                )
             else:
-                lines.append(f"{r['pre_stevilka']}: NAPAKA - {r.get('error', '')}")
+                lines.append(f"{r.get('pre_stevilka') or r.get('dn')}: NAPAKA/PRESKOČENO - {r.get('error', r.get('status', ''))}")
 
         for line in lines:
             self.append_log(line)
 
         if not lines:
-            QMessageBox.information(self, "Korak 2", "Ni podatkov za obdelavo.")
+            QMessageBox.information(self, "Obdelaj", result.get("message", "Ni podatkov za obdelavo."))
             return
 
-        prefix = "" if result.get("vse_uspesno") else "Nekatere prevzemnice niso bile uspešno obdelane:\n\n"
-        QMessageBox.information(self, "Korak 2 - rezultat", prefix + "\n".join(lines))
+        prefix = "" if result.get("vse_uspesno") else "Nekatere prevzemnice niso bile uspešno posodobljene:\n\n"
+        QMessageBox.information(self, "Obdelaj - rezultat", prefix + "\n".join(lines))
 
 
 def main() -> None:
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(str(ICON_PATH)))
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

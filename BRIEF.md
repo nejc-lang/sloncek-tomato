@@ -1,32 +1,30 @@
 # Brief za Claude Code — DN-PREVZEMNICA-Tomato: obdelava delovnih nalogov in prevzemnic
 
-Projekt `DN-PREVZEMNICA-Tomato` (skelet že postavljen: FastAPI backend na portu 8090 + eVasco API klient) potrebuje implementacijo poslovne logike + Qt6 GUI z dvema gumboma ("Korak 1", "Korak 2").
+Projekt `DN-PREVZEMNICA-Tomato` (skelet že postavljen: FastAPI backend na portu 8090 + eVasco API klient) implementira poslovno logiko + Qt6 GUI z enim gumbom ("Obdelaj").
 
 ## Namen sistema
 
-1. **Korak 1**: poišče vse delovne naloge (DN) današnjega dne, ki še niso bili obdelani, s pogoji `FAKTURIRANA = 7` in `SKLADISCE = 11`. Za vsak DN pridobi vrednost dodatnega polja `PRE_STEVILKA` in z njo poišče povezano prevzemnico (glava + postavke). Vse pridobljene podatke shrani (persistenca), v GUI pa izpiše seznam številk prevzemnic, ki jih mora uporabnik ročno izbrisati v eVasco sistemu.
-2. **Korak 2** (ročno sproženo šele, ko uporabnik potrdi, da je prevzemnice izbrisal): za vsako prevzemnico iz zadnje seje Koraka 1 kreira **novo** prevzemnico (`POST /api/v1/FA/prevzemnica`) s podatki iz izbrisane prevzemnice + dodatnimi/spremenjenimi vrednostmi (glej spodaj). eVasco avtomatsko dodeli novo številko — to ni enako številki izbrisane prevzemnice; sledljivost do izvirnika je zagotovljena preko polja `DOKUMENT_DOBAVNICA`.
+**En korak** (od 2026-07-27, prej dvokoračen proces brisanje+kreiranje — glej git zgodovino): poišče vse delovne naloge (DN) današnjega dne, ki še niso bili obdelani, s pogoji `FAKTURIRANA = 7` in `SKLADISCE = 11`. Za vsak DN pridobi vrednost dodatnega polja `PRE_STEVILKA` in z njo poišče povezano prevzemnico (glava + postavke). Nato za vsako najdeno prevzemnico z enim **API PUT klicem** dopolni obstoječe vrednosti neposredno na tej isti prevzemnici — brez brisanja in ponovnega ustvarjanja. Dopolnjujejo se: `datum`, `ins_drzava`, `ins_drzava_porekla`, `komercialist`, `skladisce`, `skladisce_za_odpis`, `ins_vrsta_transporta`, `lot`, `datum_uporabnosti`, `cena_vnesena` (glej izračune spodaj).
 
-**Zakaj brisanje + ponovno kreiranje, ne update:** eVasco API za prevzemnice **nima `PUT`** endpointa (swagger definira samo `GET`/`POST` za `/api/v1/FA/prevzemnica`) — ažuriranje obstoječe prevzemnice torej ni mogoče. Delovni nalog (`FA/DelovniNalog`) sicer PUT ima, **vendar ga v tem procesu ni treba klicati** — sledljivost do izvirnega DN se namreč zapiše že v novo prevzemnico (polje `DOKUMENT_DOBAVNICA` = `PRE_STEVILKA + " DN"`), zato podatki na DN ostanejo nespremenjeni.
+**⚠️ PUT endpoint za `/api/v1/FA/prevzemnica` še ni objavljen v swaggerju** (stanje 2026-07-27; do zdaj sta bila na voljo samo `GET`/`POST`). Ko bo eVasco stran objavila natančno specifikacijo, je treba preveriti/popraviti `EVascoClient.update_prevzemnica` (pot, način identifikacije ciljne prevzemnice, natančna oblika telesa) — trenutna implementacija je najboljša ocena glede na obstoječ vzorec (`StevilkaOd`/`StevilkaDo` query parametra kot pri GET-u, telo v obliki `PrevzemnicaPostBaseRequest` s samo spremenjenimi polji).
 
 ## Sledenje že obdelanim DN
 
-- Korak 1 vedno išče DN v datumskem razponu **`DatumOd = danes - 1`, `DatumDo = danes`** (pokrije tudi primer, ko se program ne zažene točno vsak dan).
-- Sistem persistentno hrani **seznam že obdelanih DN** (`stevilka.leto`) — npr. v lokalni JSON/SQLite datoteki v containerju (na volumnu, da se ohrani med restarti). To ni več "zadnja številka" (x1), ker datumski razpon pokriva 2 dni in številke DN znotraj njega niso nujno strogo naraščajoče/brez vrzeli glede na filter.
+- Vsak zagon vedno išče DN v datumskem razponu **`DatumOd = danes - 1`, `DatumDo = danes`** (pokrije tudi primer, ko se program ne zažene točno vsak dan).
+- Sistem persistentno hrani **seznam že obdelanih DN** (`stevilka.leto`, `data/obdelani_dn.json`). To ni "zadnja številka" (x1), ker datumski razpon pokriva 2 dni in številke DN znotraj njega niso nujno strogo naraščajoče/brez vrzeli glede na filter.
 - Po pridobitvi DN iz API-ja (glej filter spodaj) sistem **client-side izloči** tiste, ki so že v seznamu obdelanih, preden nadaljuje z iskanjem prevzemnic.
-- Seznam obdelanih DN se posodobi **takoj po uspešnem zaključku Koraka 1** (fetch + shranjevanje podatkov v sejo), ne šele po Koraku 2 — s tem se prepreči ponovna obdelava istih DN/prevzemnic ob naslednjem zagonu Koraka 1, tudi če Korak 2 še ni bil izveden.
+- DN se v seznam obdelanih doda **šele ob uspešni PUT posodobitvi njegove prevzemnice** — DN z napako (manjka `PRE_STEVILKA`, prevzemnica ni najdena, napaka pri PUT-u ...) ostane zunaj seznama in se **samodejno poskusi znova** ob naslednjem zagonu. To je varno, ker je PUT idempotenten (v nasprotju s prejšnjim POST/create pristopom ni tveganja podvajanja zapisov ob ponovnem poskusu).
 
-## Persistenca "seje"
+## Arhiv obdelanih zahtevkov
 
-- Vsak zagon Koraka 1 ustvari "sejo" (npr. datoteka `seja_<timestamp>.json` ali vrstica v SQLite), ki vsebuje: seznam DN (celoten odgovor, vključno z `dodatnaPolja`, `postavke`), za vsak DN pripadajočo prevzemnico (celoten odgovor, vključno s `postavke`), in status seje (`cakajoce_korak2` / `obdelano`).
-- Korak 2 vedno operira nad zadnjo sejo s statusom `cakajoce_korak2`. Po uspešnem kreiranju vseh novih prevzemnic se status seje spremeni v `obdelano`.
-- **Potrjeno: Korak 2 je "vse ali nič"** — če kreiranje ene od prevzemnic spodleti, se seja ne oznaci kot obdelana in celoten Korak 2 se šteje za neuspešen (brez delnega urejanja/ponovnega poganjanja samo manjkajočih).
+- Za vsako uspešno posodobljeno prevzemnico se telo PUT klica (+ lotPodatki načrt) arhivira v `data/izhodni_zahtevki/prevzemnica_posodobitev_<pre_stevilka>_<timestamp>.json` — služi kot trajen arhiv in sledljivost.
+- Ker je vse en klic backenda (`POST /api/obdelaj`), ni več koncepta "seje, ki čaka na korak 2" — vsak zagon je samostojen in dokončan (uspeh/napaka je znan takoj, na ravni posamezne prevzemnice, ne "vse ali nič" za cel batch).
 
 ## eVasco API klici (glej `evasco_client.py`, dopolni)
 
 **Avtentikacija**: `POST /api/v1/Avtentikacija` (username/password/taxNumber iz `.env`) → `apiKey`, veljaven 30 min, cache + auto-refresh (že implementirano/predvideno v skeletu).
 
-**Korak 1 — iskanje DN**: `GET /api/v1/FA/dn/nalog`
+**Iskanje DN**: `GET /api/v1/FA/dn/nalog`
 - Parametri: `DatumOd = danes-1`, `DatumDo = danes` (oba `T00:00:00`), `StevilkaOd`/`StevilkaDo` obvezna kljub datumskemu filtru — uporabi širok razpon za obe leti, ki lahko nastopita v razponu (`00001.{lansko_leto}` do `99999.{letosnje_leto}`, ali smiselno prilagojeno), `VrniPostavke=1`, `DodatnaPolja=FAKTURIRANA,SKLADISCE,PRE_STEVILKA`, `DodatnoPoljeFilter` (**array** stringov, ne en JSON string!):
   ```python
   params["DodatnoPoljeFilter"] = [
@@ -37,15 +35,15 @@ Projekt `DN-PREVZEMNICA-Tomato` (skelet že postavljen: FastAPI backend na portu
 - Za vsak DN v odgovoru poišči `PRE_STEVILKA` v `dodatnaPolja[]`.
 - Po prejemu odgovora izloči DN, ki so že v perzistentnem seznamu obdelanih (`stevilka.leto`).
 
-**Korak 1 — poizvedba prevzemnice**: `GET /api/v1/FA/prevzemnica`
+**Poizvedba prevzemnice**: `GET /api/v1/FA/prevzemnica`
 - `StevilkaOd`/`StevilkaDo` = `f"{pre_stevilka}.{leto}"` (če `PRE_STEVILKA` že vsebuje piko z letom, uporabi kot je; sicer dodaj isto leto kot DN)
 - `VrniPostavke=1`, `VrniOznakoPriloge=1`
 
-**Korak 2 — dodatni podatki na vsaki postavki (LOT, DATUM_UPORABNOSTI, CENA_VNESENA)**
+**Dodatni podatki na vsaki postavki (LOT, DATUM_UPORABNOSTI, CENA_VNESENA)**
 
-Za vsako postavko nove prevzemnice je treba poleg `sifra`/`kolicina`/`nabavnaCena` izračunati in zapisati tri dodatne vrednosti. Vse tri gredo preko `postavke[].dodatnaPolja[]` (glej telo POST klica spodaj) — **razen `DATUM_UPORABNOSTI`, ki ni polje na postavki prevzemnice, ampak gre v ločen šifrant lotov** (glej spodaj).
+Za vsako postavko obstoječe prevzemnice je treba izračunati in zapisati tri dodatne vrednosti. LOT in CENA_VNESENA gresta preko `postavke[].dodatnaPolja[]` v PUT telesu (glej telo spodaj) — **razen `DATUM_UPORABNOSTI`, ki ni polje na postavki prevzemnice, ampak gre v ločen šifrant lotov** (glej spodaj).
 
-1. **LOT** — format `ddmmyy`, izračunan iz datuma **originalne (izbrisane) prevzemnice** (potrjeno). Npr. za 12.3.2026 → `"120326"`.
+1. **LOT** — format `ddmmyy`, izračunan iz datuma **obstoječe prevzemnice** (potrjeno). Npr. za 12.3.2026 → `"120326"`.
    ```python
    lot = prevzemnica_original["datum"].strftime("%d%m%y")
    ```
@@ -85,30 +83,25 @@ Za vsako postavko nove prevzemnice je treba poleg `sifra`/`kolicina`/`nabavnaCen
    ```
 
 
-Request shema (`PrevzemnicaPostBaseRequest`) **nima** polj `stevilka`, `insDrzava`, `insDrzavaPorekla`, `skladisceZaOdpis`, `insVrstaTransporta`, `dokumentDobavnica` kot neposrednih lastnosti — vsa nestandardna polja gredo preko `dodatnaPolja[]` (glava). Sestavi takole:
+PUT telo namenoma vsebuje SAMO polja, ki se dejansko spreminjajo — `dobavitelj`/`rabat1` in `kolicina`/`nabavnaCena`/`stopnjaDdv` na postavkah ostanejo nedotaknjeni (obstoječa prevzemnica se ne prepiše v celoti, samo dopolni). `DOKUMENT_DOBAVNICA` ni več potreben (sledljivost do izvirnega DN ni potrebna — prevzemnica ostane ista, ne nastane nova). Sestavi takole (glej `app/process.py::_prepare_prevzemnica_update`):
 
 ```python
 body = {
-    "datum": prevzemnica_original["datum"],        # datum originalne (izbrisane) prevzemnice
-    "dobavitelj": prevzemnica_original["dobavitelj"],
-    "komercialist": "11",                          # string, max 5 znakov
+    "datum": prevzemnica_original["datum"],
+    "komercialist": "011",                          # string, max 5 znakov
     "skladisce": 11,
-    "rabat1": 0.0,
     "dodatnaPolja": [
         {"naziv": "INS_DRZAVA", "vrednost": 705},
         {"naziv": "INS_DRZAVA_POREKLA", "vrednost": 705},
         {"naziv": "SKLADISCE_ZA_ODPIS", "vrednost": 11},
         {"naziv": "INS_VRSTA_TRANSPORTA", "vrednost": 3},
-        {"naziv": "DOKUMENT_DOBAVNICA", "vrednost": f"{pre_stevilka} DN"},
     ],
     "postavke": [
         {
             "sifra": p["sifra"],
-            "kolicina": p["kolicina"],
-            "nabavnaCena": p["cena"],
             "dodatnaPolja": [
                 {"naziv": "LOT", "vrednost": lot},
-                {"naziv": "CENA_VNESENA", "vrednost": cena_izdelka},  # glej izračun zgoraj
+                {"naziv": "CENA_VNESENA", "vrednost": cena_izdelka},  # glej izračun zgoraj; samo za izdelke
             ],
         }
         for p in prevzemnica_original["postavke"]
@@ -118,14 +111,10 @@ body = {
 
 `DATUM_UPORABNOSTI` gre ločeno, preko `FASifranti/lotPodatki` (ni del zgornjega telesa) — glej razdelek zgoraj.
 
-- **Potrjeno**: `stopnjaDdv` pri POST-u postavk **ni obvezen** — če ga originalni podatki ne vsebujejo, se lahko izpusti.
-- Iz odgovora (`RacunPostResponse`) shrani novo dodeljeno `stevilka`/`leto` v sejo, za sledljivost/log.
-
-**⚠️ Testno obdobje — dejanski POST klic naj se NE izvaja:**
-Dokler ni eksplicitno potrjeno, da je Korak 2 pripravljen za produkcijo, `POST /api/v1/FA/prevzemnica` naj se **ne kliče dejansko**. Namesto tega naj sistem za vsako prevzemnico iz seje samo sestavi `body` (kot zgoraj) in ga zapiše v datoteko (npr. `dry_run_post_<stevilka_prevzemnice>_<timestamp>.json`), da je mogoče natančno preveriti, kateri podatki bi bili dejansko poslani. GUI naj v tem načinu prikaže povzetek "pripravljenih" (ne "kreiranih") prevzemnic, z jasnim opozorilom, da gre za suhi zagon (dry run). Preklop iz dry-run v dejansko izvajanje naj bo enostavna sprememba (npr. konfiguracijska zastavica `DRY_RUN=true/false` v `.env`), ne pa poseg v kodo.
+- **Potrjeno**: `stopnjaDdv` se pri PUT-u ne pošilja — ostaja nespremenjen.
+- PUT klic identificira ciljno prevzemnico (glej `EVascoClient.update_prevzemnica` — trenutno `StevilkaOd`/`StevilkaDo` query parametra, enako kot pri GET-u; **preveriti, ko bo PUT objavljen v swaggerju**).
 
 ## Qt6 GUI
 
-- Gumb **"Korak 1"**: pošlje POST na backend endpoint (npr. `/api/step1`), backend izvede zgornjo logiko, GUI prikaže obvestilo (message box / panel) s seznamom številk prevzemnic iz seje ("Izbrišite naslednje prevzemnice v eVasco sistemu: 06802, ..."). Če ni novih DN, prikaže ustrezno sporočilo ("Ni novih delovnih nalogov za obdelavo").
-- Gumb **"Korak 2"**: pošlje POST na `/api/step2`, backend kreira nove prevzemnice iz zadnje `cakajoce_korak2` seje, GUI prikaže povzetek (uspešno kreirane nove številke, morebitne napake).
-- Oba gumba naj bosta med izvajanjem onemogočena (loading indikator), da se prepreči podvojeno sprožanje.
+- Gumb **"Obdelaj"**: pošlje `POST /api/obdelaj`, backend izvede zgornjo logiko (najde DN, poišče prevzemnice, dopolni jih s PUT-om), GUI prikaže povzetek (katere prevzemnice so bile uspešno posodobljene, morebitne napake in cenovna opozorila).
+- Gumb naj bo med izvajanjem onemogočen (loading indikator), da se prepreči podvojeno sprožanje.
