@@ -1,0 +1,10 @@
+services:
+  dn-prevzemnica-tomato:
+    build: .
+    container_name: DN-PREVZEMNICA-Tomato
+    ports:
+      - "8090:8090"
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

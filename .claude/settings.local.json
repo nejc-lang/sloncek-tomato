@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 *)",
+      "Bash(docker compose up *)",
+      "Bash(docker exec *)",
+      "Bash(git init *)",
+      "Bash(git add *)"
+    ]
+  }
+}

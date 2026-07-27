@@ -1,0 +1,87 @@
+[
+  {
+    "stevilka": "00604",
+    "leto": 2026,
+    "datum": "2026-01-21T00:00:00",
+    "dobavitelj": 2,
+    "vrednostPrejema": 7.99,
+    "vrednostDevize": 0.0,
+    "dokIdPriloge": [],
+    "dodatnaPolja": [
+      {
+        "naziv": "DATUM_VALUTE",
+        "vrednost": "2026-01-21T00:00:00"
+      },
+      {
+        "naziv": "DATUM_ZA_DDV_KNJIGO",
+        "vrednost": "2026-01-21T00:00:00"
+      },
+      {
+        "naziv": "DDV_DATUM_KNJIZENJA",
+        "vrednost": "2026-01-21T00:00:00"
+      },
+      {
+        "naziv": "DDV_DATUM_PREJEMA",
+        "vrednost": "2026-01-21T00:00:00"
+      },
+      {
+        "naziv": "DDV_ZNESEK_8",
+        "vrednost": 7.99
+      },
+      {
+        "naziv": "DOKUMENT_DOBAVNICA",
+        "vrednost": "50277 dn"
+      },
+      {
+        "naziv": "INS_DRZAVA",
+        "vrednost": 705
+      },
+      {
+        "naziv": "INS_VRSTA_TRANSPORTA",
+        "vrednost": 3
+      },
+      {
+        "naziv": "KOMERCIALIST",
+        "vrednost": "011"
+      },
+      {
+        "naziv": "PREVZEMNICA_TIP",
+        "vrednost": 1
+      },
+      {
+        "naziv": "SKLADISCE",
+        "vrednost": 11
+      },
+      {
+        "naziv": "SKLADISCE_ZA_ODPIS",
+        "vrednost": 11
+      }
+    ],
+    "postavke": [
+      {
+        "zs": 1,
+        "sifra": "04875",
+        "kolicina": 5.0,
+        "cena": 1.598,
+        "vrednost": 7.99,
+        "lot": "200126",
+        "dodatnaPolja": [
+          {
+            "naziv": "CENA_VNESENA",
+            "vrednost": 1.5988
+          },
+          {
+            "naziv": "INS_DRZAVA_POREKLA",
+            "vrednost": 705
+          },
+          {
+            "naziv": "VREDNOST_VNESENA",
+            "vrednost": 7.99
+          }
+        ],
+        "lotPodatki": [],
+        "serijskeStevilke": []
+      }
+    ]
+  }
+]

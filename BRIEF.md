@@ -1,0 +1,131 @@
+# Brief za Claude Code — DN-PREVZEMNICA-Tomato: obdelava delovnih nalogov in prevzemnic
+
+Projekt `DN-PREVZEMNICA-Tomato` (skelet že postavljen: FastAPI backend na portu 8090 + eVasco API klient) potrebuje implementacijo poslovne logike + Qt6 GUI z dvema gumboma ("Korak 1", "Korak 2").
+
+## Namen sistema
+
+1. **Korak 1**: poišče vse delovne naloge (DN) današnjega dne, ki še niso bili obdelani, s pogoji `FAKTURIRANA = 7` in `SKLADISCE = 11`. Za vsak DN pridobi vrednost dodatnega polja `PRE_STEVILKA` in z njo poišče povezano prevzemnico (glava + postavke). Vse pridobljene podatke shrani (persistenca), v GUI pa izpiše seznam številk prevzemnic, ki jih mora uporabnik ročno izbrisati v eVasco sistemu.
+2. **Korak 2** (ročno sproženo šele, ko uporabnik potrdi, da je prevzemnice izbrisal): za vsako prevzemnico iz zadnje seje Koraka 1 kreira **novo** prevzemnico (`POST /api/v1/FA/prevzemnica`) s podatki iz izbrisane prevzemnice + dodatnimi/spremenjenimi vrednostmi (glej spodaj). eVasco avtomatsko dodeli novo številko — to ni enako številki izbrisane prevzemnice; sledljivost do izvirnika je zagotovljena preko polja `DOKUMENT_DOBAVNICA`.
+
+**Zakaj brisanje + ponovno kreiranje, ne update:** eVasco API za prevzemnice **nima `PUT`** endpointa (swagger definira samo `GET`/`POST` za `/api/v1/FA/prevzemnica`) — ažuriranje obstoječe prevzemnice torej ni mogoče. Delovni nalog (`FA/DelovniNalog`) sicer PUT ima, **vendar ga v tem procesu ni treba klicati** — sledljivost do izvirnega DN se namreč zapiše že v novo prevzemnico (polje `DOKUMENT_DOBAVNICA` = `PRE_STEVILKA + " DN"`), zato podatki na DN ostanejo nespremenjeni.
+
+## Sledenje že obdelanim DN
+
+- Korak 1 vedno išče DN v datumskem razponu **`DatumOd = danes - 1`, `DatumDo = danes`** (pokrije tudi primer, ko se program ne zažene točno vsak dan).
+- Sistem persistentno hrani **seznam že obdelanih DN** (`stevilka.leto`) — npr. v lokalni JSON/SQLite datoteki v containerju (na volumnu, da se ohrani med restarti). To ni več "zadnja številka" (x1), ker datumski razpon pokriva 2 dni in številke DN znotraj njega niso nujno strogo naraščajoče/brez vrzeli glede na filter.
+- Po pridobitvi DN iz API-ja (glej filter spodaj) sistem **client-side izloči** tiste, ki so že v seznamu obdelanih, preden nadaljuje z iskanjem prevzemnic.
+- Seznam obdelanih DN se posodobi **takoj po uspešnem zaključku Koraka 1** (fetch + shranjevanje podatkov v sejo), ne šele po Koraku 2 — s tem se prepreči ponovna obdelava istih DN/prevzemnic ob naslednjem zagonu Koraka 1, tudi če Korak 2 še ni bil izveden.
+
+## Persistenca "seje"
+
+- Vsak zagon Koraka 1 ustvari "sejo" (npr. datoteka `seja_<timestamp>.json` ali vrstica v SQLite), ki vsebuje: seznam DN (celoten odgovor, vključno z `dodatnaPolja`, `postavke`), za vsak DN pripadajočo prevzemnico (celoten odgovor, vključno s `postavke`), in status seje (`cakajoce_korak2` / `obdelano`).
+- Korak 2 vedno operira nad zadnjo sejo s statusom `cakajoce_korak2`. Po uspešnem kreiranju vseh novih prevzemnic se status seje spremeni v `obdelano`.
+- **Potrjeno: Korak 2 je "vse ali nič"** — če kreiranje ene od prevzemnic spodleti, se seja ne oznaci kot obdelana in celoten Korak 2 se šteje za neuspešen (brez delnega urejanja/ponovnega poganjanja samo manjkajočih).
+
+## eVasco API klici (glej `evasco_client.py`, dopolni)
+
+**Avtentikacija**: `POST /api/v1/Avtentikacija` (username/password/taxNumber iz `.env`) → `apiKey`, veljaven 30 min, cache + auto-refresh (že implementirano/predvideno v skeletu).
+
+**Korak 1 — iskanje DN**: `GET /api/v1/FA/dn/nalog`
+- Parametri: `DatumOd = danes-1`, `DatumDo = danes` (oba `T00:00:00`), `StevilkaOd`/`StevilkaDo` obvezna kljub datumskemu filtru — uporabi širok razpon za obe leti, ki lahko nastopita v razponu (`00001.{lansko_leto}` do `99999.{letosnje_leto}`, ali smiselno prilagojeno), `VrniPostavke=1`, `DodatnaPolja=FAKTURIRANA,SKLADISCE,PRE_STEVILKA`, `DodatnoPoljeFilter` (**array** stringov, ne en JSON string!):
+  ```python
+  params["DodatnoPoljeFilter"] = [
+      json.dumps({"Polje": "FAKTURIRANA", "Simbol": "=", "Vrednost": 7}),
+      json.dumps({"Polje": "SKLADISCE", "Simbol": "=", "Vrednost": 11}),
+  ]
+  ```
+- Za vsak DN v odgovoru poišči `PRE_STEVILKA` v `dodatnaPolja[]`.
+- Po prejemu odgovora izloči DN, ki so že v perzistentnem seznamu obdelanih (`stevilka.leto`).
+
+**Korak 1 — poizvedba prevzemnice**: `GET /api/v1/FA/prevzemnica`
+- `StevilkaOd`/`StevilkaDo` = `f"{pre_stevilka}.{leto}"` (če `PRE_STEVILKA` že vsebuje piko z letom, uporabi kot je; sicer dodaj isto leto kot DN)
+- `VrniPostavke=1`, `VrniOznakoPriloge=1`
+
+**Korak 2 — dodatni podatki na vsaki postavki (LOT, DATUM_UPORABNOSTI, CENA_VNESENA)**
+
+Za vsako postavko nove prevzemnice je treba poleg `sifra`/`kolicina`/`nabavnaCena` izračunati in zapisati tri dodatne vrednosti. Vse tri gredo preko `postavke[].dodatnaPolja[]` (glej telo POST klica spodaj) — **razen `DATUM_UPORABNOSTI`, ki ni polje na postavki prevzemnice, ampak gre v ločen šifrant lotov** (glej spodaj).
+
+1. **LOT** — format `ddmmyy`, izračunan iz datuma **originalne (izbrisane) prevzemnice** (potrjeno). Npr. za 12.3.2026 → `"120326"`.
+   ```python
+   lot = prevzemnica_original["datum"].strftime("%d%m%y")
+   ```
+
+2. **DATUM_UPORABNOSTI** — `datum originalne prevzemnice + FA_ARTIKEL.PROSTO_R5 (dni)`, za šifro artikla **te postavke** (ne sestavin):
+   ```python
+   artikel = get_artikel(sifra=postavka["sifra"], dodatna_polja=["PROSTO_R5"])
+   prosto_r5_dni = int(float(artikel["dodatnaPolja"][0]["vrednost"]))  # dodatnaPolja[naziv=="PROSTO_R5"]
+   datum_uporabnosti = prevzemnica_original["datum"] + timedelta(days=prosto_r5_dni)
+   ```
+   **Kam se zapiše**: `DATUM_UPORABNOSTI` **ni** stolpec tabele `FA_PREVZEMNICA_KNJIZBA` (ni ga v seznamu iz `/prevzemnica/postavka/polja`) — gre v ločen centralni šifrant lotov: `POST`/`PUT /api/v1/FASifranti/lotPodatki`, telo `{"sifra": <sifra artikla>, "lot": <LOT iz točke 1>, "datumUporabnosti": <izračunan datum>}`.
+   - Pred vpisom **najprej preveri z GET-om** (`GET /api/v1/FASifranti/lotPodatki?Sifra=<sifra>&Lot=<lot>`), ali kombinacija šifra+lot že obstaja (POST vrne `409`, če že obstaja) — če obstaja, uporabi `PUT` (ažuriranje) namesto `POST`, ali preskoči, če je vrednost že enaka.
+
+3. **CENA_VNESENA** — vrednost gre v `postavke[].dodatnaPolja` kot `{"naziv": "CENA_VNESENA", "vrednost": cena_izdelka}` (ni nativno polje v `PrevzemnicaPostavkePutPostBaseRequest`). Izračun: `cena_izdelka = cena_mat + cena_op`, nato zaokroženo na **največ 5 številskih mest (significant digits, ne decimalnih mest)** pred pošiljanjem preko API klica — npr. `2.043656` → `2.0437`, `123.456789` → `123.46` (potrjeno s strani uporabnika 2026-07-24, implementirano v `_round_cena` v `app/process.py`).
+
+   **Kontrola prodajne cene** (potrjeno s strani uporabnika 2026-07-24, smer primerjave popravljena isti dan): po izračunu se `CENA_VNESENA` primerja z najnižjo od dveh dodatnih polj `PRODAJNA_CENA3`/`PRODAJNA_CENA4` (`GET /api/v1/FASifranti/artikel?Sifra=<sifra_izdelka>&DodatnaPolja=PRODAJNA_CENA3,PRODAJNA_CENA4`, glej `_fetch_prodajne_cene_izdelka_lookup`). Če je `CENA_VNESENA` **višja** od te najnižje prodajne cene (izdelek bi se prodajal z izgubo), se doda opozorilo (prefiks `CENA_OPOZORILO:` v `warnings`) - GUI ga izpiše z **rdečim tekstom** (glej `gui/main.py::append_log`). `0`/manjkajoča vrednost na `PRODAJNA_CENA3`/`4` se šteje za "cena ni nastavljena" (isti dogovor kot pri `NABAVNA_CENA`) in se izloči iz primerjave; če nobena od obeh ni nastavljena, se primerjava izpusti. (Prvotna verzija je pomotoma opozarjala v obratnem primeru - ko je bila cena_vnesena NIŽJA od prodajne cene, kar je pravzaprav normalno/dobro stanje.)
+
+   **cena_mat** — sestavine artikla (t. i. "SIFRA_MAT") se pridobijo preko `GET /api/v1/FASifranti/artikel/normativ?Normativ=<sifra_postavke>` (⚠️ **NE** `Artikel=` — ta parameter vrača obratno smer: kje je `<sifra_postavke>` uporabljena kot sestavina v receptu NEKEGA DRUGEGA artikla, kar je bil bug, odkrit in popravljen 2026-07-24 na živih podatkih artikla 04949) → vrne seznam `{"normativ": <sifra_postavke>, "artikel": <sifra_sestavine>, "kolicina": ..., "procentKala": ...}` (polji `normativ`/`artikel` sta pri poizvedbi z `Normativ=` obrnjeni glede na to, kar bi pričakovali od imena parametra). Cena posamezne sestavine (`NABAVNA_CENA`) se pridobi preko `GET /api/v1/FASifranti/artikel?Sifra=<sifra_sestavine>&DodatnaPolja=NABAVNA_CENA` (**ni** nativno polje `ArtikelResponse`, samo dodatno polje; `prodajnaCena` je za te artikle vedno `0.0` in ni uporabno).
+   ```python
+   cena_mat = sum(
+       nabavna_cena[sestavina["artikel"]] * sestavina["kolicina"] * (1 + sestavina["procentKala"] / 100)
+       for sestavina in normativ_sestavin
+   )
+   ```
+   **Potrjeno**: `procentKala` je pravi odstotek (npr. `12.0` = 12%) in se **deli s 100** — glej živi primer P03350 (procentKala=12.0 na sestavini 60519); brez deljenja bi to pomenilo 13x nabavno ceno namesto realnega ~12% kala.
+
+   **cena_op** — operacije artikla (t. i. "SIFRA_OPER") preko `GET /api/v1/FASifranti/artikel/normativOperacije?Normativ=<sifra_postavke>` (enak `Normativ=`/`Artikel=` obrat kot zgoraj) → polja `artikel` (šifra same operacije, npr. `P50000`), `redneUre` (= `FA_NOR_OPER.REDNE_URE`). Na artiklih brez lastnih operacij ta klic vrne prazen seznam - `cena_op = 0` je v tem primeru pravilno.
+
+   **Popravek 2026-07-24 (2)**: `pripravneUre` se **ne** upošteva v `cena_op` (potrjeno s strani uporabnika) - samo `redneUre`. Če je `redneUre = 0` za neko operacijo, se doda opozorilo v `warnings` (GUI ga prikaže) - informativno, ne pomeni napake v izračunu.
+
+   **Urna postavka** (potrjeno s strani uporabnika 2026-07-24): `urna_postavka` = `FA_ARTIKEL.PRODAJNA_CENA` **šifre same operacije**, ne fiksna konfiguracijska vrednost. Native polje `prodajnaCena` na `GET /api/v1/FASifranti/artikel?Sifra=<sifra_operacije>` (brez potrebe po `DodatnaPolja`). Primer: operacija `P50000` ("P strošek za francosko solato") ima `prodajnaCena=0.2` → za izdelek 04949 (`redneUre=1.8`) je `cena_op = 1.8 * 0.2 = 0.36`.
+   ```python
+   cena_op = sum(
+       operacija["redneUre"] * urna_postavka[operacija["artikel"]]
+       for operacija in normativ_operacij_izdelka
+   )
+   ```
+
+
+Request shema (`PrevzemnicaPostBaseRequest`) **nima** polj `stevilka`, `insDrzava`, `insDrzavaPorekla`, `skladisceZaOdpis`, `insVrstaTransporta`, `dokumentDobavnica` kot neposrednih lastnosti — vsa nestandardna polja gredo preko `dodatnaPolja[]` (glava). Sestavi takole:
+
+```python
+body = {
+    "datum": prevzemnica_original["datum"],        # datum originalne (izbrisane) prevzemnice
+    "dobavitelj": prevzemnica_original["dobavitelj"],
+    "komercialist": "11",                          # string, max 5 znakov
+    "skladisce": 11,
+    "rabat1": 0.0,
+    "dodatnaPolja": [
+        {"naziv": "INS_DRZAVA", "vrednost": 705},
+        {"naziv": "INS_DRZAVA_POREKLA", "vrednost": 705},
+        {"naziv": "SKLADISCE_ZA_ODPIS", "vrednost": 11},
+        {"naziv": "INS_VRSTA_TRANSPORTA", "vrednost": 3},
+        {"naziv": "DOKUMENT_DOBAVNICA", "vrednost": f"{pre_stevilka} DN"},
+    ],
+    "postavke": [
+        {
+            "sifra": p["sifra"],
+            "kolicina": p["kolicina"],
+            "nabavnaCena": p["cena"],
+            "dodatnaPolja": [
+                {"naziv": "LOT", "vrednost": lot},
+                {"naziv": "CENA_VNESENA", "vrednost": cena_izdelka},  # glej izračun zgoraj
+            ],
+        }
+        for p in prevzemnica_original["postavke"]
+    ],
+}
+```
+
+`DATUM_UPORABNOSTI` gre ločeno, preko `FASifranti/lotPodatki` (ni del zgornjega telesa) — glej razdelek zgoraj.
+
+- **Potrjeno**: `stopnjaDdv` pri POST-u postavk **ni obvezen** — če ga originalni podatki ne vsebujejo, se lahko izpusti.
+- Iz odgovora (`RacunPostResponse`) shrani novo dodeljeno `stevilka`/`leto` v sejo, za sledljivost/log.
+
+**⚠️ Testno obdobje — dejanski POST klic naj se NE izvaja:**
+Dokler ni eksplicitno potrjeno, da je Korak 2 pripravljen za produkcijo, `POST /api/v1/FA/prevzemnica` naj se **ne kliče dejansko**. Namesto tega naj sistem za vsako prevzemnico iz seje samo sestavi `body` (kot zgoraj) in ga zapiše v datoteko (npr. `dry_run_post_<stevilka_prevzemnice>_<timestamp>.json`), da je mogoče natančno preveriti, kateri podatki bi bili dejansko poslani. GUI naj v tem načinu prikaže povzetek "pripravljenih" (ne "kreiranih") prevzemnic, z jasnim opozorilom, da gre za suhi zagon (dry run). Preklop iz dry-run v dejansko izvajanje naj bo enostavna sprememba (npr. konfiguracijska zastavica `DRY_RUN=true/false` v `.env`), ne pa poseg v kodo.
+
+## Qt6 GUI
+
+- Gumb **"Korak 1"**: pošlje POST na backend endpoint (npr. `/api/step1`), backend izvede zgornjo logiko, GUI prikaže obvestilo (message box / panel) s seznamom številk prevzemnic iz seje ("Izbrišite naslednje prevzemnice v eVasco sistemu: 06802, ..."). Če ni novih DN, prikaže ustrezno sporočilo ("Ni novih delovnih nalogov za obdelavo").
+- Gumb **"Korak 2"**: pošlje POST na `/api/step2`, backend kreira nove prevzemnice iz zadnje `cakajoce_korak2` seje, GUI prikaže povzetek (uspešno kreirane nove številke, morebitne napake).
+- Oba gumba naj bosta med izvajanjem onemogočena (loading indikator), da se prepreči podvojeno sprožanje.
