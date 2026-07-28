@@ -6,7 +6,7 @@ from pathlib import Path
 import httpx
 from dotenv import load_dotenv
 from PySide6.QtCore import QSize, QThread, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QIcon, QPixmap, QTextCharFormat, QTextCursor
+from PySide6.QtGui import QColor, QFont, QIcon, QPixmap, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -180,6 +180,28 @@ class MainWindow(QMainWindow):
         self.log_view.setTextCursor(cursor)
         self.log_view.ensureCursorVisible()
 
+    def append_result_line(self, label: str, status_text: str, success: bool) -> None:
+        """Izpiše 'Prevzemnica {label} -> {status_text}' v log, s številko
+        prevzemnice v zeleni (uspeh) ali rdeči (napaka) odebeljeni pisavi."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        cursor = self.log_view.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        if not self.log_view.document().isEmpty():
+            cursor.insertBlock()
+
+        plain_fmt = QTextCharFormat()
+        cursor.insertText(f"[{timestamp}] Prevzemnica ", plain_fmt)
+
+        label_fmt = QTextCharFormat()
+        label_fmt.setForeground(QColor("green" if success else "red"))
+        label_fmt.setFontWeight(QFont.Bold)
+        cursor.insertText(label, label_fmt)
+
+        cursor.insertText(f" -> {status_text}", plain_fmt)
+
+        self.log_view.setTextCursor(cursor)
+        self.log_view.ensureCursorVisible()
+
     def _set_busy(self, busy: bool) -> None:
         self.obdelaj_button.setEnabled(not busy)
         self.progress.setVisible(busy)
@@ -220,7 +242,6 @@ class MainWindow(QMainWindow):
     def on_obdelaj_clicked(self) -> None:
         self._set_busy(True)
         self.status_label.setText("Obdelava v teku...")
-        self.append_log(f"POST {API_BASE_URL}/api/obdelaj")
 
         self.worker = ApiWorker("/api/obdelaj")
         self.worker.finished_with_result.connect(self.on_finished)
@@ -253,27 +274,33 @@ class MainWindow(QMainWindow):
             else:
                 self.append_log("OPOZORILO: " + warning)
 
-        lines = []
-        for r in result.get("results", []):
-            if r.get("status") == "uspesno":
-                lines.append(f"{r['pre_stevilka']} -> posodobljeno (izhodna datoteka: {r.get('izhodna_datoteka', '')})")
-            elif r.get("status") == "pripravljeno":
-                lines.append(
-                    f"{r['pre_stevilka']} -> pripravljeno, PUT testno preskočen "
-                    f"(izhodna datoteka: {r.get('izhodna_datoteka', '')})"
-                )
-            else:
-                lines.append(f"{r.get('pre_stevilka') or r.get('dn')}: NAPAKA/PRESKOČENO - {r.get('error', r.get('status', ''))}")
-
-        for line in lines:
-            self.append_log(line)
-
-        if not lines:
-            QMessageBox.information(self, "Obdelaj", result.get("message", "Ni podatkov za obdelavo."))
+        results = result.get("results", [])
+        if not results:
+            self.append_log(result.get("message", "Ni podatkov za obdelavo."))
             return
 
-        prefix = "" if result.get("vse_uspesno") else "Nekatere prevzemnice niso bile uspešno posodobljene:\n\n"
-        QMessageBox.information(self, "Obdelaj - rezultat", prefix + "\n".join(lines))
+        if not result.get("vse_uspesno"):
+            self.append_log("Nekatere prevzemnice niso bile uspešno posodobljene:")
+
+        for r in results:
+            if r.get("status") == "uspesno":
+                self.append_result_line(
+                    r["pre_stevilka"],
+                    f"posodobljena (izhodna datoteka: {r.get('izhodna_datoteka', '')})",
+                    success=True,
+                )
+            elif r.get("status") == "pripravljeno":
+                self.append_result_line(
+                    r["pre_stevilka"],
+                    f"pripravljena, PUT testno preskočen (izhodna datoteka: {r.get('izhodna_datoteka', '')})",
+                    success=True,
+                )
+            else:
+                self.append_result_line(
+                    r.get("pre_stevilka") or r.get("dn"),
+                    f"NAPAKA/PRESKOČENO - {r.get('error', r.get('status', ''))}",
+                    success=False,
+                )
 
 
 def main() -> None:
