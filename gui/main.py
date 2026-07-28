@@ -276,7 +276,6 @@ class MainWindow(QMainWindow):
 
         results = result.get("results", [])
         if not results:
-            self.append_log(result.get("message", "Ni podatkov za obdelavo."))
             return
 
         if not result.get("vse_uspesno"):
