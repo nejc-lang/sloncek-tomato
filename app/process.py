@@ -600,12 +600,15 @@ def _obdelaj_dn(client: EVascoClient) -> dict:
 def _obdelaj_sscc(client: EVascoClient) -> dict:
     """Zapiše konstanten SSCC na postavke dobavnic kupca `SSCC_PARTNER` iz skladišča `SSCC_SKLADISCE`.
 
-    Obdeluje dobavnice v razponu včeraj..danes. `lot`/`datumUporabnosti`/
+    Obdeluje samo dobavnice DANAŠNJEGA dne (potrjeno s strani uporabnika
+    2026-10-29, prej včeraj..danes). `lot`/`datumUporabnosti`/
     `kolicina` se vzamejo s postavke dobavnice same (potrjeno s strani
-    uporabnika 2026-10-29), `sscc` je konstanta settings.SSCC_KODA. Izjema:
-    v `kolicina` SSCC zapisa se zapiše ŠTEVILO KARTONOV postavke (dodatno
-    polje KARTONI), ne količina postavke - potrjeno s strani uporabnika
-    2026-10-29. Postavka brez KARTONI (None/0) se preskoči z opozorilom.
+    uporabnika 2026-10-29), `sscc` je konstanta settings.SSCC_KODA. En POST
+    na postavko z OBEMA poljema (potrjeno s strani uporabnika 2026-10-29,
+    zamenja prejšnjo različico, kjer je `kolicina` nosila število kartonov):
+    `kolicina` = količina postavke, `kartoni` = ŠTEVILO KARTONOV postavke
+    (dodatno polje KARTONI). Postavka brez KARTONI (None/0) se preskoči z
+    opozorilom.
 
     POST /FA/SSCCDobavnica ni idempotenten, zato je podvajanje preprečeno
     dvakrat: (1) že obdelane dobavnice (`stevilka.leto`) se persistentno
@@ -619,8 +622,7 @@ def _obdelaj_sscc(client: EVascoClient) -> dict:
     poskusi znova.
     """
     today = datetime.now()
-    datum_od = (today - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
-    datum_do = today.strftime("%Y-%m-%dT00:00:00")
+    datum_od = datum_do = today.strftime("%Y-%m-%dT00:00:00")
     padding = settings.STEVILKA_PADDING
     dobavnice = client.get_dobavnice(
         partner=settings.SSCC_PARTNER,
@@ -684,7 +686,8 @@ def _obdelaj_sscc(client: EVascoClient) -> dict:
                 "lot": lot,
                 "sscc": settings.SSCC_KODA,
                 "datumUporabnosti": datum_uporabnosti,
-                "kolicina": kartoni,
+                "kolicina": postavka["kolicina"],
+                "kartoni": kartoni,
             }
             rezultat: dict[str, Any] = {"dobavnica": oznaka, "zs": zs, "sifra": postavka["sifra"], "telo": body}
             if settings.SSCC_DOBAVNICA_DRY_RUN:
