@@ -602,7 +602,10 @@ def _obdelaj_sscc(client: EVascoClient) -> dict:
 
     Obdeluje dobavnice v razponu včeraj..danes. `lot`/`datumUporabnosti`/
     `kolicina` se vzamejo s postavke dobavnice same (potrjeno s strani
-    uporabnika 2026-10-29), `sscc` je konstanta settings.SSCC_KODA.
+    uporabnika 2026-10-29), `sscc` je konstanta settings.SSCC_KODA. Izjema:
+    v `kolicina` SSCC zapisa se zapiše ŠTEVILO KARTONOV postavke (dodatno
+    polje KARTONI), ne količina postavke - potrjeno s strani uporabnika
+    2026-10-29. Postavka brez KARTONI (None/0) se preskoči z opozorilom.
 
     POST /FA/SSCCDobavnica ni idempotenten, zato je podvajanje preprečeno
     dvakrat: (1) že obdelane dobavnice (`stevilka.leto`) se persistentno
@@ -665,6 +668,14 @@ def _obdelaj_sscc(client: EVascoClient) -> dict:
                 ),
                 None,
             )
+            kartoni = _get_dodatno_polje(postavka.get("dodatnaPolja"), "KARTONI")
+            if not kartoni:
+                warnings.append(
+                    f"SSCC: dobavnica {oznaka} zs {zs} ({postavka['sifra']}): manjka število kartonov (KARTONI) - preskočeno."
+                )
+                results.append({"dobavnica": oznaka, "zs": zs, "sifra": postavka["sifra"], "status": "napaka", "error": "manjka KARTONI"})
+                vse_zapisane = False
+                continue
             body: dict[str, Any] = {
                 "stevilka": stevilka,
                 "leto": leto,
@@ -673,7 +684,7 @@ def _obdelaj_sscc(client: EVascoClient) -> dict:
                 "lot": lot,
                 "sscc": settings.SSCC_KODA,
                 "datumUporabnosti": datum_uporabnosti,
-                "kolicina": postavka["kolicina"],
+                "kolicina": kartoni,
             }
             rezultat: dict[str, Any] = {"dobavnica": oznaka, "zs": zs, "sifra": postavka["sifra"], "telo": body}
             if settings.SSCC_DOBAVNICA_DRY_RUN:

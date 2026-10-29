@@ -246,6 +246,8 @@ class EVascoClient:
         """GET /api/v1/FA/dobavnica za enega kupca (`Partner`) z postavkami (`skladisce`, `lot`, `lotPodatki`).
 
         StevilkaOd/StevilkaDo sta obvezna (oblika Stevilka.Leto), sicer 400.
+        `KARTONI` ni native polje postavke - zahteva DodatnaPoljaPostavke
+        (pride v `postavka["dodatnaPolja"]`).
         """
         params = {
             "Partner": partner,
@@ -254,6 +256,7 @@ class EVascoClient:
             "StevilkaOd": stevilka_od,
             "StevilkaDo": stevilka_do,
             "VrniPostavke": 1,
+            "DodatnaPoljaPostavke": "KARTONI",
         }
         return self.get("/api/v1/FA/dobavnica", params=params).json()
 
