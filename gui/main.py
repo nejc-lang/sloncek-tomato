@@ -116,6 +116,7 @@ class MainWindow(QMainWindow):
         self.sscc_button = QPushButton(self.SSCC_BUTTON_TEXT)
         self.sscc_button.setFixedSize(self.BUTTON_SIZE)
         self.sscc_button.setStyleSheet(self.obdelaj_button.styleSheet())
+        self.sscc_button.setIconSize(self.obdelaj_button.iconSize())
         self.sscc_button.clicked.connect(self.on_sscc_clicked)
 
         self.progress = QProgressBar()
@@ -153,6 +154,10 @@ class MainWindow(QMainWindow):
         ]
         self._anim_frame_index = 0
         self._anim_loop_count = 0
+        # Gumb, na katerem se animacija trenutno predvaja (tisti, ki je
+        # uspešno zaključil operacijo) in njegovo izvirno besedilo.
+        self._anim_button: QPushButton = self.obdelaj_button
+        self._anim_text = self.BUTTON_TEXT
         self._anim_timer = QTimer(self)
         self._anim_timer.timeout.connect(self._on_animation_tick)
 
@@ -220,16 +225,22 @@ class MainWindow(QMainWindow):
         self.sscc_button.setEnabled(not busy)
         self.progress.setVisible(busy)
 
-    def _start_elephant_animation(self) -> None:
-        """Po končani obdelavi 3x predvaja animacijo slončka V GUMBU (namesto besedila), s 1s premorom med ponovitvami."""
+    def _start_elephant_animation(self, button: QPushButton, text: str) -> None:
+        """Po končani obdelavi 3x predvaja animacijo slončka V GUMBU `button` (namesto besedila `text`), s 1s premorom med ponovitvami.
+
+        Predvaja se na gumbu, ki je uspešno zaključil operacijo; med
+        animacijo sta onemogočena oba gumba.
+        """
         if not self._anim_frames:
             return
+        self._anim_button = button
+        self._anim_text = text
         self._anim_loop_count = 0
         self._anim_frame_index = 0
         self.obdelaj_button.setEnabled(False)
         self.sscc_button.setEnabled(False)
-        self.obdelaj_button.setText("")
-        self.obdelaj_button.setIcon(QIcon(self._anim_frames[0]))
+        button.setText("")
+        button.setIcon(QIcon(self._anim_frames[0]))
         self._anim_timer.start(self.ANIM_FRAME_MS)
 
     def _on_animation_tick(self) -> None:
@@ -242,16 +253,16 @@ class MainWindow(QMainWindow):
                 return
             QTimer.singleShot(self.ANIM_LOOP_PAUSE_MS, self._start_next_animation_loop)
             return
-        self.obdelaj_button.setIcon(QIcon(self._anim_frames[self._anim_frame_index]))
+        self._anim_button.setIcon(QIcon(self._anim_frames[self._anim_frame_index]))
 
     def _start_next_animation_loop(self) -> None:
         self._anim_frame_index = 0
-        self.obdelaj_button.setIcon(QIcon(self._anim_frames[0]))
+        self._anim_button.setIcon(QIcon(self._anim_frames[0]))
         self._anim_timer.start(self.ANIM_FRAME_MS)
 
     def _finish_elephant_animation(self) -> None:
-        self.obdelaj_button.setIcon(QIcon())
-        self.obdelaj_button.setText(self.BUTTON_TEXT)
+        self._anim_button.setIcon(QIcon())
+        self._anim_button.setText(self._anim_text)
         self.obdelaj_button.setEnabled(True)
         self.sscc_button.setEnabled(True)
 
@@ -283,14 +294,16 @@ class MainWindow(QMainWindow):
 
         if endpoint == "/api/sscc":
             self._handle_sscc_result(result)
-            return
-
-        self._handle_obdelaj_result(result)
+            button, text = self.sscc_button, self.SSCC_BUTTON_TEXT
+        else:
+            self._handle_obdelaj_result(result)
+            button, text = self.obdelaj_button, self.BUTTON_TEXT
         # Animacija slončka se predvaja le ob v celoti uspešno zaključenem
-        # procesu (vse_uspesno) - ne ob API napaki (obravnavano zgoraj) in ne
-        # ob delnem neuspehu (nekatere prevzemnice niso bile posodobljene).
+        # procesu (vse_uspesno), in sicer na gumbu, ki je operacijo zagnal -
+        # ne ob API napaki (obravnavano zgoraj) in ne ob delnem neuspehu
+        # (nekatere prevzemnice/dobavnice niso bile obdelane).
         if result.get("vse_uspesno"):
-            self._start_elephant_animation()
+            self._start_elephant_animation(button, text)
 
     def _handle_obdelaj_result(self, result: dict) -> None:
         self.status_label.setText("Obdelava zaključena.")
