@@ -36,7 +36,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name="DN-PREVZEMNICA-Tomato-GUI",
+    name="Sloncek-Tomato-GUI",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

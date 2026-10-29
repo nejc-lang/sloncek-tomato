@@ -1,7 +1,7 @@
 services:
-  dn-prevzemnica-tomato:
+  sloncek-tomato:
     build: .
-    container_name: DN-PREVZEMNICA-Tomato
+    container_name: Sloncek-Tomato
     ports:
       - "8090:8090"
     env_file: .env

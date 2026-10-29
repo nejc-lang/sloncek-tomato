@@ -5,6 +5,11 @@ pretvorbo `gui/main.py` v samostojen Windows `.exe` in nato v namestitveni
 program (`Setup.exe`, namestitveni jezik EN): `gui.spec`, `build_exe.bat`,
 `build_installer.bat`, `setup.iss`.
 
+**Verzija aplikacije: 1.1.** Določena je na dveh mestih, ki ju je ob novi
+verziji treba uskladiti: `APP_VERSION` v `gui/main.py` (prikazana v naslovu
+okna) in `MyAppVersion` v `gui/setup.iss` (verzija namestitvenega programa,
+"Apps & features" v Windows).
+
 **Pomembno:** vse spodnje skripte je treba pognati na **Windows** računalniku
 - PyInstaller zgradi binarko za operacijski sistem, na katerem teče (ne zna
 prečno graditi Windows `.exe` iz Linuxa), enako velja za Inno Setup Compiler.
@@ -27,7 +32,7 @@ naredi ničesar odveč.
 cd gui
 build_exe.bat
 ```
-Zgradi `dist\DN-PREVZEMNICA-Tomato-GUI.exe` (samostojna, onefile binarka -
+Zgradi `dist\Sloncek-Tomato-GUI.exe` (samostojna, onefile binarka -
 ne potrebuje ločeno nameščenega Pythona ali pip paketov na ciljnem
 računalniku, vse je vgrajeno).
 
@@ -36,7 +41,7 @@ cd gui
 build_installer.bat
 ```
 Najprej pokliče `build_exe.bat`, nato z Inno Setup zgradi
-`dist_installer\DN-PREVZEMNICA-Tomato-GUI-Setup.exe` - namestitveni program:
+`dist_installer\Sloncek-Tomato-GUI-Setup.exe` - namestitveni program:
 - **namestitveni jezik: samo angleščina** (`[Languages]` v `setup.iss` ima en
   sam vnos, zato se dialog za izbiro jezika sploh ne prikaže)
 - namesti `.exe` + predlogo `.env.example` (in `.env`, samo če na cilju še ne

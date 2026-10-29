@@ -42,5 +42,18 @@ class Settings(BaseSettings):
     # delujoč endpoint in se pišejo ne glede na to zastavico.
     PUT_PREVZEMNICA_DRY_RUN: bool = True
 
+    # SSCC zapis na dobavnice (POST /api/v1/FA/SSCCDobavnica, glej
+    # app/process.py::_obdelaj_sscc): samo dobavnice kupca SSCC_PARTNER in
+    # samo postavke iz skladišča SSCC_SKLADISCE (potrjeno s strani
+    # uporabnika 2026-10-29). SSCC_KODA je konstanta za vse postavke.
+    SSCC_PARTNER: int = 3202
+    SSCC_SKLADISCE: int = 11
+    SSCC_KODA: str = "938300396399999999"
+
+    # Dokler je True, se POST SSCCDobavnica preskoči - telesa se samo
+    # izračunajo in arhivirajo (data/izhodni_zahtevki/sscc_dobavnice_*.json).
+    # Nastavi na False v .env po ročni potrditvi izpisa.
+    SSCC_DOBAVNICA_DRY_RUN: bool = True
+
 
 settings = Settings()

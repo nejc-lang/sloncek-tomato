@@ -1,4 +1,4 @@
-# DN-PREVZEMNICA-Tomato
+# Sloncek-Tomato
 
 Integracija z eVasco API za obdelavo delovnih nalogov (DN) in prevzemnic.
 Sestavljen je iz dveh delov:
@@ -274,7 +274,7 @@ gui/
   requirements.txt      odvisnosti GUI klienta (host)
   .env.example         predloga za API_BASE_URL (naslov backenda v LAN)
   gui.spec              PyInstaller spec (gui/main.py -> onefile .exe)
-  build_exe.bat         Windows: zgradi gui\dist\DN-PREVZEMNICA-Tomato-GUI.exe
+  build_exe.bat         Windows: zgradi gui\dist\Sloncek-Tomato-GUI.exe
   setup.iss             Inno Setup skripta (namestitveni jezik: EN)
   build_installer.bat   Windows: build_exe.bat + Inno Setup -> Setup.exe
   INSTALLER.md           navodila za gradnjo namestitvenega paketa
@@ -293,7 +293,7 @@ cd gui
 build_installer.bat
 ```
 
-Namestitveni program (`dist_installer\DN-PREVZEMNICA-Tomato-GUI-Setup.exe`)
+Namestitveni program (`dist_installer\Sloncek-Tomato-GUI-Setup.exe`)
 teče v angleščini, namesti vse potrebne Python odvisnosti GUI-ja (vgrajene v
 `.exe` preko PyInstaller - ni potreben ločen Python na ciljnem računalniku)
 ter po potrebi (samo če manjka) samodejno namesti Microsoft Visual C++

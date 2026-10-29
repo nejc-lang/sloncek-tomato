@@ -240,5 +240,38 @@ class EVascoClient:
             return None
         return response.json()
 
+    def get_dobavnice(
+        self, *, partner: int, datum_od: str, datum_do: str, stevilka_od: str, stevilka_do: str
+    ) -> list[dict]:
+        """GET /api/v1/FA/dobavnica za enega kupca (`Partner`) z postavkami (`skladisce`, `lot`, `lotPodatki`).
+
+        StevilkaOd/StevilkaDo sta obvezna (oblika Stevilka.Leto), sicer 400.
+        """
+        params = {
+            "Partner": partner,
+            "DatumOd": datum_od,
+            "DatumDo": datum_do,
+            "StevilkaOd": stevilka_od,
+            "StevilkaDo": stevilka_do,
+            "VrniPostavke": 1,
+        }
+        return self.get("/api/v1/FA/dobavnica", params=params).json()
+
+    def get_sscc_dobavnice(self, stevilka_leto: str) -> list[dict]:
+        """GET /api/v1/FA/SSCC_dobavnice za eno dobavnico - [] če SSCC še ni vnesen."""
+        params = {"StevilkaOd": stevilka_leto, "StevilkaDo": stevilka_leto}
+        return self.get("/api/v1/FA/SSCC_dobavnice", params=params).json()
+
+    def create_sscc_dobavnica(self, body: dict) -> None:
+        """POST /api/v1/FA/SSCCDobavnica (`DobavnicaSSCCPostRequest`) - vnese SSCC na postavko dobavnice.
+
+        Odgovor je 200 z golim besedilom ("SSCC koda vnešena na dobavnico."),
+        NE JSON - zato se `.json()` ne kliče. Ni idempotenten (ponovitev
+        verjetno podvoji zapis), zato klicatelj pred tem preveri
+        get_sscc_dobavnice. Če ima dobavnico odprto uporabnik v eVasco, vrne
+        400 (prehoden zaklep).
+        """
+        self.post("/api/v1/FA/SSCCDobavnica", json=body)
+
     def close(self) -> None:
         self._client.close()

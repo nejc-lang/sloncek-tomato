@@ -49,5 +49,5 @@ if errorlevel 1 (
 )
 
 echo.
-echo Namestitveni paket: gui\dist_installer\DN-PREVZEMNICA-Tomato-GUI-Setup.exe
+echo Namestitveni paket: gui\dist_installer\Sloncek-Tomato-GUI-Setup.exe
 pause

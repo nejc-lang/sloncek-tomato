@@ -1,6 +1,6 @@
-# Brief za Claude Code — DN-PREVZEMNICA-Tomato: obdelava delovnih nalogov in prevzemnic
+# Brief za Claude Code — Sloncek-Tomato: obdelava delovnih nalogov in prevzemnic
 
-Projekt `DN-PREVZEMNICA-Tomato` (skelet že postavljen: FastAPI backend na portu 8090 + eVasco API klient) implementira poslovno logiko + Qt6 GUI z enim gumbom ("Obdelaj").
+Projekt `Sloncek-Tomato` (skelet že postavljen: FastAPI backend na portu 8090 + eVasco API klient) implementira poslovno logiko + Qt6 GUI z enim gumbom ("Obdelaj").
 
 ## Namen sistema
 
@@ -20,7 +20,7 @@ Projekt `DN-PREVZEMNICA-Tomato` (skelet že postavljen: FastAPI backend na portu
 ## Sledenje že obdelanim DN
 
 - **TESTNO OBDOBJE**: `settings.DN_STEVILKA_OD` (`.env`, privzeto `1` = brez omejitve) je spodnja meja (vključno) `stevilka` delovnega naloga - DN z nižjo numerično vrednostjo se client-side izločijo takoj po pridobitvi iz API-ja (`app/process.py::run`), preden gre sistem naprej v iskanje prevzemnic. Namen: med ročnim testiranjem preprečiti poseg v DN/prevzemnice, ki obstajajo od prej. Primerjava je numerična (`int(dn["stevilka"])`, API vrača ne-zero-padded string npr. `"52870"`), ne string.
-- Vsak zagon vedno išče DN v datumskem razponu **`DatumOd = danes - 1`, `DatumDo = danes`** (pokrije tudi primer, ko se program ne zažene točno vsak dan).
+- Vsak zagon išče DN v datumskem razponu **`DatumOd = danes - 1`, `DatumDo = danes`** (pokrije tudi primer, ko se program ne zažene točno vsak dan), **RAZEN v ponedeljek** (potrjeno s strani uporabnika 2026-08-10): takrat `DatumOd` ostane na **danes** (ne pade nazaj na petek) - v ponedeljek se pregledujejo samo delovni nalogi od današnjega dne, ne za nazaj čez cel vikend. To je ločen pogoj od petkovega +2 dni popravka na LOT/DATUM_UPORABNOSTI/DATUM (glej spodaj), ki se nanaša na obdelavo najdenih prevzemnic, ne na iskanje DN.
 - Sistem persistentno hrani **seznam že obdelanih DN** (`stevilka.leto`, `data/obdelani_dn.json`). To ni "zadnja številka" (x1), ker datumski razpon pokriva 2 dni in številke DN znotraj njega niso nujno strogo naraščajoče/brez vrzeli glede na filter.
 - Po pridobitvi DN iz API-ja (glej filter spodaj) sistem **client-side izloči** tiste, ki so že v seznamu obdelanih, preden nadaljuje z iskanjem prevzemnic.
 - DN se v seznam obdelanih doda **šele ob uspešni PUT posodobitvi njegove prevzemnice** — DN z napako (manjka `PRE_STEVILKA`, prevzemnica ni najdena, napaka pri PUT-u ...) ostane zunaj seznama in se **samodejno poskusi znova** ob naslednjem zagonu. To je varno, ker je PUT idempotenten (v nasprotju s prejšnjim POST/create pristopom ni tveganja podvajanja zapisov ob ponovnem poskusu).
@@ -53,16 +53,25 @@ Projekt `DN-PREVZEMNICA-Tomato` (skelet že postavljen: FastAPI backend na portu
 
 Za vsako postavko obstoječe prevzemnice je treba izračunati in zapisati tri dodatne vrednosti. LOT, INS_DRZAVA_POREKLA in CENA_VNESENA gresta preko `postavke[].dodatnaPolja[]` v telesu `PUT /api/v1/FA/prevzemnica/spremembaPostavk` (glej telo spodaj) — **razen `DATUM_UPORABNOSTI`, ki ni polje na postavki prevzemnice, ampak gre v ločen šifrant lotov** (glej spodaj).
 
-1. **LOT** — format `ddmmyy`, izračunan iz datuma **obstoječe prevzemnice** (potrjeno). Npr. za 12.3.2026 → `"120326"`.
+1. **LOT** — format `ddmmyy`, izračunan iz datuma **obstoječe prevzemnice** (potrjeno), RAZEN v petek (glej spodaj). Npr. za 12.3.2026 → `"120326"`.
    ```python
-   lot = prevzemnica_original["datum"].strftime("%d%m%y")
+   lot_osnova = prevzemnica_original["datum"]
+   lot = lot_osnova.strftime("%d%m%y")
    ```
+   **Petkov pogoj (potrjeno s strani uporabnika 2026-08-07)**: če je dan, ko se delovni nalogi OBDELUJEJO (`datetime.now()`, ne datum prevzemnice), PETEK, se `lot_osnova` namesto iz datuma prevzemnice izračuna kot `danes + 2 dni`. Primer: obdelava v petek 7.8.2026 → `lot_osnova = 9.8.2026` → `lot = "090826"`.
+   ```python
+   danes = datetime.now()
+   je_petek = danes.weekday() == 4
+   lot_osnova = danes + timedelta(days=2) if je_petek else prevzemnica_original["datum"]
+   lot = lot_osnova.strftime("%d%m%y")
+   ```
+   **Dodatek (potrjeno s strani uporabnika 2026-08-07)**: SAMO ob petku se ista vrednost `lot_osnova` zapiše tudi v glavo prevzemnice - `FA_PREVZEMNICA.DATUM` (nadomesti `original["datum"]` v `header_body["datum"]` glej `PUT /api/v1/FA/prevzemnica` telo spodaj) IN dodatno kot dve novi `dodatnaPolja` postavki na glavi: `DATUM_VALUTE` in `DATUM_ZA_DDV_KNJIGO` (obe = `lot_osnova`). Ob ne-petkovih dneh se `DATUM_VALUTE`/`DATUM_ZA_DDV_KNJIGO` sploh NE pošljeta (telo ostane nespremenjeno glede na prejšnjo verzijo).
 
-2. **DATUM_UPORABNOSTI** — `datum originalne prevzemnice + FA_ARTIKEL.PROSTO_R5 (dni)`, za šifro artikla **te postavke** (ne sestavin):
+2. **DATUM_UPORABNOSTI** — `lot_osnova (glej točko 1, torej datum prevzemnice ALI petek+2 dni) + FA_ARTIKEL.PROSTO_R5 (dni)`, za šifro artikla **te postavke** (ne sestavin):
    ```python
    artikel = get_artikel(sifra=postavka["sifra"], dodatna_polja=["PROSTO_R5"])
    prosto_r5_dni = int(float(artikel["dodatnaPolja"][0]["vrednost"]))  # dodatnaPolja[naziv=="PROSTO_R5"]
-   datum_uporabnosti = prevzemnica_original["datum"] + timedelta(days=prosto_r5_dni)
+   datum_uporabnosti = lot_osnova + timedelta(days=prosto_r5_dni)
    ```
    **Pogoj (potrjeno s strani uporabnika 2026-07-27)**: zapiše se SAMO, če je `PROSTO_R5 >= 1`. Če je `PROSTO_R5 == 0` (ali manjka), se `DATUM_UPORABNOSTI` za to postavko sploh NE zapiše (izdelek brez roka uporabnosti) - `lotPodatki` zapis se zanjo ne pripravi. Primer: danes 27.07.2026, izdelek s `PROSTO_R5 = 2` → `datum_uporabnosti = 29.07.2026`.
    **Kam se zapiše**: `DATUM_UPORABNOSTI` **ni** stolpec tabele `FA_PREVZEMNICA_KNJIZBA` (ni ga v seznamu iz `/prevzemnica/postavka/polja`) in ni del nobenega od dveh `PUT /api/v1/FA/prevzemnica*` teles zgoraj/spodaj — gre v ločen centralni šifrant lotov: `POST`/`PUT /api/v1/FASifranti/lotPodatki`, telo `{"sifra": <sifra artikla>, "lot": <LOT iz točke 1>, "datumUporabnosti": <izračunan datum>}`. Ta klic (glej `app/process.py::run`, blok "LOT / DATUM_UPORABNOSTI") se izvede NEODVISNO od `PUT_PREVZEMNICA_DRY_RUN` (glej `app/config.py`) - torej dejansko piše v produkcijo že zdaj, za vsako postavko s `PROSTO_R5 >= 1`.
@@ -101,7 +110,7 @@ PUT telesi namenoma vsebujeta SAMO polja, ki se dejansko spreminjajo — `dobavi
 header_body = {
     "stevilka": prevzemnica_original["stevilka"],   # identifikacija V TELESU, ne query parametrov
     "leto": prevzemnica_original["leto"],
-    "datum": prevzemnica_original["datum"],
+    "datum": lot_osnova if je_petek else prevzemnica_original["datum"],  # ob petku prepisano na danes+2, glej zgoraj
     "komercialist": "011",                          # string, max 5 znakov
     "skladisce": 11,
     "dodatnaPolja": [
@@ -109,6 +118,9 @@ header_body = {
         {"naziv": "SKLADISCE_ZA_ODPIS", "vrednost": 11},
         {"naziv": "INS_VRSTA_TRANSPORTA", "vrednost": 3},
         {"naziv": "DOKUMENT_DOBAVNICA", "vrednost": f"{dn_stevilka} DN"},
+        # DATUM_VALUTE/DATUM_ZA_DDV_KNJIGO se dodata SAMO ob petku (glej zgoraj):
+        # {"naziv": "DATUM_VALUTE", "vrednost": lot_osnova},
+        # {"naziv": "DATUM_ZA_DDV_KNJIGO", "vrednost": lot_osnova},
     ],
 }
 

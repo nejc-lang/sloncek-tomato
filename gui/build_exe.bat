@@ -55,7 +55,7 @@ python -m pip install --upgrade pip
 pip install -r "%GUI_DIR%requirements.txt"
 pip install pyinstaller
 
-if exist "%GUI_DIR%dist\DN-PREVZEMNICA-Tomato-GUI.exe" del /f /q "%GUI_DIR%dist\DN-PREVZEMNICA-Tomato-GUI.exe"
+if exist "%GUI_DIR%dist\Sloncek-Tomato-GUI.exe" del /f /q "%GUI_DIR%dist\Sloncek-Tomato-GUI.exe"
 
 pyinstaller --noconfirm --distpath "%GUI_DIR%dist" --workpath "%GUI_DIR%build" "%GUI_DIR%gui.spec"
 
@@ -66,5 +66,5 @@ if errorlevel 1 (
 )
 
 echo.
-echo Zgrajeno: gui\dist\DN-PREVZEMNICA-Tomato-GUI.exe
+echo Zgrajeno: gui\dist\Sloncek-Tomato-GUI.exe
 if /i "%~1" neq "--no-pause" pause

@@ -49,6 +49,9 @@ if getattr(sys, "frozen", False):
     _resource_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
 else:
     _resource_dir = Path(__file__).resolve().parent
+# Verzija aplikacije - ob spremembi uskladi tudi MyAppVersion v gui/setup.iss.
+APP_VERSION = "1.1"
+
 ICON_PATH = _resource_dir / "pic-sloncek" / "flying_elephant_frame_1.png"
 ANIMATION_FRAME_PATHS = [_resource_dir / "pic-sloncek" / f"flying_elephant_frame_{i}.png" for i in range(1, 7)]
 
@@ -82,6 +85,7 @@ class ApiWorker(QThread):
 
 class MainWindow(QMainWindow):
     BUTTON_TEXT = "Izpolni\nprevzemnice"
+    SSCC_BUTTON_TEXT = "Zapiši\nSSCC"
     BUTTON_SIZE = QSize(300, 250)
     # Trajanje enega okvirja animacije slončka in premor med posameznimi
     # ponovitvami (3x, 1s premor med njimi - glej _start_elephant_animation).
@@ -91,9 +95,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Slonček")
+        self.setWindowTitle(f"Slonček - Tomato v{APP_VERSION}")
         self.setWindowIcon(QIcon(str(ICON_PATH)))
-        self.resize(700, 500)
+        self.resize(720, 500)
 
         self.obdelaj_button = QPushButton(self.BUTTON_TEXT)
         self.obdelaj_button.setFixedSize(self.BUTTON_SIZE)
@@ -106,6 +110,13 @@ class MainWindow(QMainWindow):
         )
         self.obdelaj_button.setIconSize(self.BUTTON_SIZE - QSize(40, 40))
         self.obdelaj_button.clicked.connect(self.on_obdelaj_clicked)
+
+        # Gumb za zapis SSCC na dobavnice - enake velikosti/sloga kot prvi
+        # gumb, desno od njega (glej button_row spodaj).
+        self.sscc_button = QPushButton(self.SSCC_BUTTON_TEXT)
+        self.sscc_button.setFixedSize(self.BUTTON_SIZE)
+        self.sscc_button.setStyleSheet(self.obdelaj_button.styleSheet())
+        self.sscc_button.clicked.connect(self.on_sscc_clicked)
 
         self.progress = QProgressBar()
         self.progress.setRange(0, 0)
@@ -122,6 +133,8 @@ class MainWindow(QMainWindow):
         button_row = QHBoxLayout()
         button_row.addStretch(1)
         button_row.addWidget(self.obdelaj_button)
+        button_row.addSpacing(20)
+        button_row.addWidget(self.sscc_button)
         button_row.addStretch(1)
 
         # Slikovni okvirji za animacijo slončka, prikazano V GUMBU (namesto
@@ -180,9 +193,9 @@ class MainWindow(QMainWindow):
         self.log_view.setTextCursor(cursor)
         self.log_view.ensureCursorVisible()
 
-    def append_result_line(self, label: str, status_text: str, success: bool) -> None:
-        """Izpiše 'Prevzemnica {label} -> {status_text}' v log, s številko
-        prevzemnice v zeleni (uspeh) ali rdeči (napaka) odebeljeni pisavi."""
+    def append_result_line(self, label: str, status_text: str, success: bool, vrsta: str = "Prevzemnica") -> None:
+        """Izpiše '{vrsta} {label} -> {status_text}' v log, s številko
+        dokumenta v zeleni (uspeh) ali rdeči (napaka) odebeljeni pisavi."""
         timestamp = datetime.now().strftime("%H:%M:%S")
         cursor = self.log_view.textCursor()
         cursor.movePosition(QTextCursor.End)
@@ -190,7 +203,7 @@ class MainWindow(QMainWindow):
             cursor.insertBlock()
 
         plain_fmt = QTextCharFormat()
-        cursor.insertText(f"[{timestamp}] Prevzemnica ", plain_fmt)
+        cursor.insertText(f"[{timestamp}] {vrsta} ", plain_fmt)
 
         label_fmt = QTextCharFormat()
         label_fmt.setForeground(QColor("green" if success else "red"))
@@ -204,6 +217,7 @@ class MainWindow(QMainWindow):
 
     def _set_busy(self, busy: bool) -> None:
         self.obdelaj_button.setEnabled(not busy)
+        self.sscc_button.setEnabled(not busy)
         self.progress.setVisible(busy)
 
     def _start_elephant_animation(self) -> None:
@@ -213,6 +227,7 @@ class MainWindow(QMainWindow):
         self._anim_loop_count = 0
         self._anim_frame_index = 0
         self.obdelaj_button.setEnabled(False)
+        self.sscc_button.setEnabled(False)
         self.obdelaj_button.setText("")
         self.obdelaj_button.setIcon(QIcon(self._anim_frames[0]))
         self._anim_timer.start(self.ANIM_FRAME_MS)
@@ -238,12 +253,21 @@ class MainWindow(QMainWindow):
         self.obdelaj_button.setIcon(QIcon())
         self.obdelaj_button.setText(self.BUTTON_TEXT)
         self.obdelaj_button.setEnabled(True)
+        self.sscc_button.setEnabled(True)
 
     def on_obdelaj_clicked(self) -> None:
         self._set_busy(True)
         self.status_label.setText("Obdelava v teku...")
 
         self.worker = ApiWorker("/api/obdelaj")
+        self.worker.finished_with_result.connect(self.on_finished)
+        self.worker.start()
+
+    def on_sscc_clicked(self) -> None:
+        self._set_busy(True)
+        self.status_label.setText("Zapis SSCC v teku...")
+
+        self.worker = ApiWorker("/api/sscc")
         self.worker.finished_with_result.connect(self.on_finished)
         self.worker.start()
 
@@ -255,6 +279,10 @@ class MainWindow(QMainWindow):
             message = result.get("message", "Neznana napaka")
             self.append_log("NAPAKA: " + message)
             QMessageBox.critical(self, "Napaka", message)
+            return
+
+        if endpoint == "/api/sscc":
+            self._handle_sscc_result(result)
             return
 
         self._handle_obdelaj_result(result)
@@ -299,6 +327,25 @@ class MainWindow(QMainWindow):
                     r.get("pre_stevilka") or r.get("dn"),
                     f"NAPAKA/PRESKOČENO - {r.get('error', r.get('status', ''))}",
                     success=False,
+                )
+
+
+    def _handle_sscc_result(self, result: dict) -> None:
+        self.status_label.setText("Zapis SSCC zaključen.")
+        self.append_log("OK: " + result.get("message", ""))
+
+        for warning in result.get("warnings", []):
+            self.append_log("OPOZORILO: " + warning)
+
+        for r in result.get("results", []):
+            label = f"{r['dobavnica']} zs {r['zs']} ({r['sifra']})" if "zs" in r else r["dobavnica"]
+            if r.get("status") == "uspesno":
+                self.append_result_line(label, "SSCC zapisan", success=True, vrsta="Dobavnica")
+            elif r.get("status") == "pripravljeno":
+                self.append_result_line(label, "SSCC pripravljen, POST testno preskočen", success=True, vrsta="Dobavnica")
+            else:
+                self.append_result_line(
+                    label, f"NAPAKA - {r.get('error', r.get('status', ''))}", success=False, vrsta="Dobavnica"
                 )
 
 

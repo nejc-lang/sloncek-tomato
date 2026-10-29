@@ -133,10 +133,24 @@ def _prepare_prevzemnica_update(
     - `PUT /api/v1/FA/prevzemnica/spremembaPostavk` (postavke): lot,
       cena_vnesena IN ins_drzava_porekla - vse tri so postavka-nivojska
       polja (tabela FA_PREVZEMNICA_KNJIZBA, potrjeno preko
-      `GET /api/v1/FA/prevzemnica/postavka/polja` 2026-07-27), NE
-      glava-nivojska kot je predvideval prejšnji (nedokumentiran) TODO.
-      Vsaka postavka potrebuje `zs` (zaporedna številka, native polje na GET
-      odgovoru postavke) poleg `sifra`.
+      `GET /api/v1/FA/prevzemnica/postavka/polja` 2026-07-27). Vsaka postavka
+      potrebuje `zs` (zaporedna številka, native polje na GET odgovoru
+      postavke) poleg `sifra`.
+
+      OPOZORILO (potrjeno testom 2026-07-29 na prevzemnicah 06983-06986):
+      eVasco na PRVEM PUT klicu na dano postavko vrne uspešen 201 odgovor,
+      a ins_drzava_porekla TIHO ne zapiše v bazo (lot/cena_vnesena se v
+      istem klicu zapišeta pravilno) - šele DRUGI (identičen) klic na isto
+      postavko vrednost dejansko zapiše. To NI vezano na število postavk v
+      enem klicu (testirano na serijah 1, 2 in 5 postavk - povsod enak
+      pojav). Trenutno se pošilja samo EN klic (brez samodejnega
+      podvajanja) - vrednost torej morda ne bo zapisana ob prvem zagonu.
+
+      INS_DRZAVA_POREKLA je od 2026-07-29 potrjeno zapisljivo TUDI na
+      glava-nivoju (tabela FA_PREVZEMNICA, poleg FA_PREVZEMNICA_KNJIZBA na
+      postavkah) - prejšnja dokumentacija (2026-07-27) je to napačno
+      izključevala, glej live PUT test na prevzemnici 06983. Zato se od
+      2026-07-29 zapisuje na OBEH nivojih (glava spodaj IN vsaka postavka).
 
     `datum_uporabnosti` gre še vedno ločeno preko FASifranti/lotPodatki (ni
     veljavno polje na postavki prevzemnice, glej _fetch_dodatno_polje_lookup
@@ -152,14 +166,28 @@ def _prepare_prevzemnica_update(
     telesih.
 
     Izračuni (LOT, CENA_VNESENA, DATUM_UPORABNOSTI) so nespremenjeni glede na
-    prejšnjo verzijo - glej BRIEF.md.
+    prejšnjo verzijo - glej BRIEF.md. Izjema od 2026-08-07: če se delovni
+    nalogi obdelujejo v PETEK, se osnova za LOT/DATUM_UPORABNOSTI namesto
+    datuma prevzemnice računa kot dan obdelave + 2 dni (glej `lot_osnova`
+    spodaj) - ista vrednost se takrat zapiše tudi v FA_PREVZEMNICA.DATUM
+    (nadomesti original["datum"]) in dodatno v DATUM_VALUTE ter
+    DATUM_ZA_DDV_KNJIGO (dodatnaPolja na glavi, dodani SAMO ob petku).
     """
     warnings: list[str] = []
     original_postavke = original.get("postavke") or []
     sifre = sorted({p["sifra"] for p in original_postavke if p.get("sifra")})
 
     original_datum = datetime.fromisoformat(original["datum"])
-    lot = original_datum.strftime("%d%m%y")
+
+    # Če se delovni nalogi obdelujejo v petek (dan obdelave, ne datum
+    # prevzemnice), se LOT in DATUM_UPORABNOSTI računata od datuma
+    # obdelave + 2 dni namesto od original_datum - potrjeno s strani
+    # uporabnika 2026-08-07 (petek se preskoči na naslednji delovni dan,
+    # +2 dni = ponedeljek).
+    danes = datetime.now()
+    je_petek = danes.weekday() == 4
+    lot_osnova = danes + timedelta(days=2) if je_petek else original_datum
+    lot = lot_osnova.strftime("%d%m%y")
 
     prosto_r5_lookup = _fetch_dodatno_polje_lookup(client, sifre, "PROSTO_R5")
     normativ_lookup = _fetch_normativ_lookup(client, sifre)
@@ -276,7 +304,7 @@ def _prepare_prevzemnica_update(
         # (POST/PUT FASifranti/lotPodatki, glej run()) sploh ne pripravi -
         # potrjeno s strani uporabnika 2026-07-27.
         if prosto_r5_dni >= 1:
-            datum_uporabnosti = original_datum + timedelta(days=prosto_r5_dni)
+            datum_uporabnosti = lot_osnova + timedelta(days=prosto_r5_dni)
             lot_zapisi[(sifra, lot)] = {
                 "sifra": sifra,
                 "lot": lot,
@@ -286,7 +314,11 @@ def _prepare_prevzemnica_update(
     header_body = {
         "stevilka": original["stevilka"],
         "leto": original["leto"],
-        "datum": original["datum"],
+        # Ob petku (glej lot_osnova zgoraj) se FA_PREVZEMNICA.DATUM prepiše
+        # na danes + 2 dni namesto na datum obstoječe prevzemnice -
+        # potrjeno s strani uporabnika 2026-08-07, glej tudi DATUM_VALUTE/
+        # DATUM_ZA_DDV_KNJIGO spodaj (dodatnaPolja, isti pogoj/vrednost).
+        "datum": lot_osnova.strftime("%Y-%m-%dT00:00:00") if je_petek else original["datum"],
         "komercialist": "011",
         "skladisce": 11,
         "dodatnaPolja": [
@@ -294,6 +326,22 @@ def _prepare_prevzemnica_update(
             {"naziv": "SKLADISCE_ZA_ODPIS", "vrednost": 11},
             {"naziv": "INS_VRSTA_TRANSPORTA", "vrednost": 3},
             {"naziv": "DOKUMENT_DOBAVNICA", "vrednost": f"{dn_stevilka} DN"},
+            {"naziv": "PREVZEMNICA_TIP", "vrednost": 0},
+            # Od 2026-07-29 INS_DRZAVA_POREKLA obstaja tudi na glava-nivoju
+            # (tabela FA_PREVZEMNICA, poleg FA_PREVZEMNICA_KNJIZBA na
+            # postavkah) - potrjeno z živim PUT testom na prevzemnici 06983.
+            {"naziv": "INS_DRZAVA_POREKLA", "vrednost": 705},
+            # DATUM_VALUTE in DATUM_ZA_DDV_KNJIGO (FA_PREVZEMNICA stolpca) se
+            # dodata SAMO ob petku, z isto vrednostjo (danes+2) kot zgornji
+            # DATUM - potrjeno s strani uporabnika 2026-08-07.
+            *(
+                [
+                    {"naziv": "DATUM_VALUTE", "vrednost": lot_osnova.strftime("%Y-%m-%dT00:00:00")},
+                    {"naziv": "DATUM_ZA_DDV_KNJIGO", "vrednost": lot_osnova.strftime("%Y-%m-%dT00:00:00")},
+                ]
+                if je_petek
+                else []
+            ),
         ],
     }
     postavke_put_body = {
@@ -305,14 +353,32 @@ def _prepare_prevzemnica_update(
     return header_body, postavke_put_body, list(lot_zapisi.values()), warnings
 
 
-def run() -> dict:
+def _obdelaj_dn(client: EVascoClient) -> dict:
     """Poišče nove DN (FAKTURIRANA=7, SKLADISCE=11) in za vsakega z enim PUT klicem posodobi njegovo prevzemnico.
 
-    Datumski razpon je vedno danes-1..danes (pokrije primer, ko se program
-    ne zažene točno vsak dan). Ker znotraj tega razpona številke DN niso
-    nujno strogo naraščajoče/brez vrzeli glede na filter, se sledenje že
-    obdelanim DN ne opira na "zadnjo številko" (x1), ampak na persistenten
-    seznam natančnih ključev (`stevilka.leto`) - glej storage.load_obdelani_dn.
+    Datumski razpon je danes-1..danes (pokrije primer, ko se program ne
+    zažene točno vsak dan), RAZEN v ponedeljek in petek (glej spodaj). Ker
+    znotraj tega razpona številke DN niso nujno strogo naraščajoče/brez
+    vrzeli glede na filter, se sledenje že obdelanim DN ne opira na "zadnjo
+    številko" (x1), ampak na persistenten seznam natančnih ključev
+    (`stevilka.leto`) - glej storage.load_obdelani_dn.
+
+    Izjema od 2026-08-10 (potrjeno s strani uporabnika): v PONEDELJEK (dan
+    obdelave) se `datum_od` NE vrne na prejšnji dan (petek), ampak ostane na
+    danes - torej se v ponedeljek pregledujejo samo delovni nalogi od
+    današnjega dne, ne za nazaj čez celoten vikend. To je ločen pogoj od
+    petkovega +2 dni popravka na LOT/DATUM_UPORABNOSTI/DATUM (glej
+    `_prepare_prevzemnica_update`), ki se nanaša na obdelavo prevzemnic, ne
+    na iskanje DN.
+
+    Izjema od 2026-08-14 (potrjeno s strani uporabnika): v PETEK se
+    `datum_do` razširi na danes + 2 dni (nedelja) namesto na danes. Razlog:
+    ponedeljkov zagon namerno NE gleda nazaj čez vikend (glej zgoraj), zato
+    bi DN, ki dobi FAKTURIRANA=7/SKLADISCE=11 status čez soboto ALI nedeljo,
+    sicer ostal nezaznan (petkov zagon bi ga zamudil navzgor, ponedeljkov pa
+    navzdol) - razširjena zgornja meja na petek pokrije CEL vikend (sobota +
+    nedelja). `datum_od` na petek ostane nespremenjen (danes-1, torej
+    četrtek), gre samo za razširitev ZGORNJE meje.
 
     Za razliko od prejšnjega dvokoračnega procesa (Korak 1: pripravi +
     izpiši seznam za ročni izbris, Korak 2: ročno sproženo kreiranje novih
@@ -322,194 +388,357 @@ def run() -> dict:
     ostane zunaj seznama in se samodejno poskusi znova ob naslednjem zagonu
     (PUT je idempotenten, ponovni poskus ne podvoji zapisov).
     """
+    today = datetime.now()
+    yesterday = today - timedelta(days=1)
+    # Ponedeljkov pogoj (potrjeno s strani uporabnika 2026-08-10): v
+    # ponedeljek se datum_od NE vrne na petek (prejšnji dan), ampak
+    # ostane na danes - pregledujejo se samo DN od današnjega dne.
+    je_ponedeljek = today.weekday() == 0
+    datum_od_osnova = today if je_ponedeljek else yesterday
+
+    # Petkov pogoj (potrjeno s strani uporabnika 2026-08-14): v petek se
+    # datum_do razširi na danes + 2 dni (nedelja), da se pokrije CEL
+    # vikend (sobota + nedelja), na katerem lahko DN dobi
+    # FAKTURIRANA=7/SKLADISCE=11 status - ponedeljkov zagon ga sicer ne
+    # bi zajel (glej je_ponedeljek zgoraj, gleda samo nazaj na danes, ne
+    # čez vikend). Ločeno od petkovega +2 dni popravka na
+    # LOT/DATUM_UPORABNOSTI/DATUM v `_prepare_prevzemnica_update`, ki se
+    # nanaša na obdelavo že najdenih prevzemnic, ne na iskanje DN (enaka
+    # +2 vrednost, a namenoma ločena spremenljivka/pogoj).
+    je_petek = today.weekday() == 4
+    datum_do_osnova = today + timedelta(days=2) if je_petek else today
+
+    datum_od = datum_od_osnova.strftime("%Y-%m-%dT00:00:00")
+    datum_do = datum_do_osnova.strftime("%Y-%m-%dT00:00:00")
+
+    padding = settings.STEVILKA_PADDING
+    lansko_leto = datum_od_osnova.year
+    # max() namesto golega today.year: ob petku na prehodu leta (31.12.,
+    # datum_do_osnova = 1.1. naslednje leto) mora zgornja meja pokriti
+    # tudi novo leto, sicer bi StevilkaDo filter DN iz 1.1. izločil kljub
+    # temu, da datumski filter zanj velja.
+    letosnje_leto = max(today.year, datum_do_osnova.year)
+    stevilka_od = f"{1:0{padding}d}.{lansko_leto}"
+    stevilka_do = f"{'9' * padding}.{letosnje_leto}"
+
+    dn_list = client.get_dn_nalogi(
+        datum_od=datum_od,
+        datum_do=datum_do,
+        stevilka_od=stevilka_od,
+        stevilka_do=stevilka_do,
+    )
+
+    # TESTNO OBDOBJE (settings.DN_STEVILKA_OD, glej app/config.py): dokler
+    # se sistem ročno testira, se DN pod to številko izločijo, da se ne
+    # posega v prevzemnice, ki so bile obdelane/preverjene še pred
+    # uvedbo tega procesa - primerjava je numerična (`stevilka` je v
+    # odgovoru API-ja neblokiran string, npr. "52870", ne zero-padded),
+    # ne string primerjava.
+    if settings.DN_STEVILKA_OD > 1:
+        dn_list = [dn for dn in dn_list if int(dn.get("stevilka") or 0) >= settings.DN_STEVILKA_OD]
+
+    if not dn_list:
+        return {
+            "status": "ok",
+            "message": "Ni novih delovnih nalogov za obdelavo.",
+            "results": [],
+        }
+
+    obdelani = storage.load_obdelani_dn()
+
+    def dn_key(dn: dict) -> str:
+        return f"{dn.get('stevilka')}.{dn.get('leto', letosnje_leto)}"
+
+    novi_dn = [dn for dn in dn_list if dn_key(dn) not in obdelani]
+
+    if not novi_dn:
+        return {
+            "status": "ok",
+            "message": "Ni novih delovnih nalogov za obdelavo.",
+            "results": [],
+        }
+
+    results: list[dict] = []
+    warnings: list[str] = []
+
+    if settings.PUT_PREVZEMNICA_DRY_RUN:
+        warnings.append(
+            "TESTNO OBDOBJE: PUT /api/v1/FA/prevzemnica še ni objavljen v swaggerju, zato PUT klic ni bil "
+            "izveden - prevzemnice spodaj so samo pripravljene/arhivirane, NISO dejansko posodobljene."
+        )
+
+    for dn in novi_dn:
+        dn_stevilka_raw = dn.get("stevilka")
+        dn_leto = dn.get("leto", letosnje_leto)
+        pre_stevilka_raw = _get_dodatno_polje(dn.get("dodatnaPolja"), "PRE_STEVILKA")
+
+        if not pre_stevilka_raw:
+            warnings.append(f"DN {dn_stevilka_raw}: manjka PRE_STEVILKA, prevzemnice ni bilo mogoče poiskati.")
+            results.append({"dn": dn_stevilka_raw, "pre_stevilka": None, "status": "brez_pre_stevilke"})
+            continue
+
+        pre_stevilka = str(pre_stevilka_raw).strip()
+        stevilka_leto = pre_stevilka if "." in pre_stevilka else f"{pre_stevilka}.{dn_leto}"
+
+        try:
+            prevzemnica = client.get_prevzemnica_by_stevilka(stevilka_leto)
+        except Exception as exc:  # noqa: BLE001 - surface per-item error, continue with others
+            warnings.append(f"DN {dn_stevilka_raw}: napaka pri pridobivanju prevzemnice {pre_stevilka}: {exc}")
+            results.append({"dn": dn_stevilka_raw, "pre_stevilka": pre_stevilka, "status": "napaka_prevzemnica", "error": str(exc)})
+            continue
+
+        if not prevzemnica:
+            warnings.append(f"DN {dn_stevilka_raw}: prevzemnica {pre_stevilka} ni bila najdena.")
+            results.append({"dn": dn_stevilka_raw, "pre_stevilka": pre_stevilka, "status": "prevzemnica_ni_najdena"})
+            continue
+
+        try:
+            header_body, postavke_body, lot_zapisi, cena_warnings = _prepare_prevzemnica_update(
+                client, prevzemnica[0], str(dn_stevilka_raw)
+            )
+            warnings.extend(cena_warnings)
+        except Exception as exc:  # noqa: BLE001 - surface per-item error, continue with others
+            warnings.append(
+                f"DN {dn_stevilka_raw}: napaka pri izračunu podatkov za prevzemnico {pre_stevilka}: {exc}"
+            )
+            results.append({"dn": dn_stevilka_raw, "pre_stevilka": pre_stevilka, "status": "napaka_izracuna", "error": str(exc)})
+            continue
+
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            # --- LOT / DATUM_UPORABNOSTI: FASifranti/lotPodatki ---
+            # Preverba (GET client.get_lot_podatki) pove, ali bi dejanski
+            # zapis sprožil POST (nov zapis), PUT (obstoječ zapis, druga
+            # vrednost) ali nič (obstoječa vrednost je že enaka) -
+            # arhivska datoteka mora vsebovati TO odločitev in TOČNO
+            # telo, ki je bilo poslano.
+            lot_podatki_nacrt: list[dict[str, Any]] = []
+            for zapis in lot_zapisi:
+                obstojeci = client.get_lot_podatki(zapis["sifra"], zapis["lot"])
+                if obstojeci and (obstojeci[0].get("datumUporabnosti") or "")[:10] == zapis["datumUporabnosti"][:10]:
+                    akcija = "brez_spremembe"
+                elif obstojeci:
+                    akcija = "posodobitev (PUT)"
+                else:
+                    akcija = "nov_zapis (POST)"
+                lot_podatki_nacrt.append({"akcija": akcija, "telo": zapis, "obstojeci_zapis": obstojeci})
+
+                if akcija == "posodobitev (PUT)":
+                    client.update_lot_podatki(zapis)
+                elif akcija == "nov_zapis (POST)":
+                    client.create_lot_podatki(zapis)
+
+            # --- Posodobitev obstoječe prevzemnice: 2x PUT FA/prevzemnica[/spremembaPostavk] ---
+            # TESTNO OBDOBJE (settings.PUT_PREVZEMNICA_DRY_RUN, privzeto
+            # True čeprav sta oba PUT-a od 2026-07-27 objavljena v
+            # swaggerju - flag se ugasne šele po ročni potrditvi na živih
+            # podatkih): dejanska PUT klica se PRESKOČITA - telesi se
+            # samo izračunata in arhivirata, da je mogoče natančno
+            # preveriti, kaj bi bilo poslano. DN se v tem primeru
+            # NAMENOMA ne doda v obdelani_dn (glej spodaj), da se enkrat
+            # ko je PUT_PREVZEMNICA_DRY_RUN=False samodejno dejansko
+            # obdela, brez ročnega posega.
+            if settings.PUT_PREVZEMNICA_DRY_RUN:
+                response_glava = None
+                response_postavke = None
+                status = "pripravljeno"
+            else:
+                response_glava = client.update_prevzemnica(header_body)
+                response_postavke = client.update_prevzemnica_postavke(postavke_body)
+                status = "uspesno"
+
+            output_path = storage.output_update_path(pre_stevilka, timestamp)
+            output_path.write_text(
+                json.dumps(
+                    {
+                        "dry_run": settings.PUT_PREVZEMNICA_DRY_RUN,
+                        "prevzemnicaGlava": header_body,
+                        "prevzemnicaPostavke": postavke_body,
+                        "lotPodatki": lot_podatki_nacrt,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+            result: dict[str, Any] = {
+                "dn": dn_stevilka_raw,
+                "pre_stevilka": pre_stevilka,
+                "status": status,
+                "izhodna_datoteka": str(output_path),
+            }
+            if response_glava is not None or response_postavke is not None:
+                result["odgovor"] = {"glava": response_glava, "postavke": response_postavke}
+            results.append(result)
+
+            if status == "uspesno":
+                storage.add_obdelani_dn({dn_key(dn)})
+        except Exception as exc:  # noqa: BLE001 - collect per-item error, continue with others
+            warnings.append(f"DN {dn_stevilka_raw}: napaka pri posodobitvi prevzemnice {pre_stevilka}: {exc}")
+            results.append({"dn": dn_stevilka_raw, "pre_stevilka": pre_stevilka, "status": "napaka", "error": str(exc)})
+
+    uspesni_statusi = ("uspesno", "pripravljeno")
+    vse_uspesno = all(r["status"] in uspesni_statusi for r in results)
+    obdelanih = sum(1 for r in results if r["status"] in uspesni_statusi)
+
+    if settings.PUT_PREVZEMNICA_DRY_RUN:
+        sporocilo = f"Najdenih {len(novi_dn)} DN, {obdelanih} prevzemnic pripravljenih (PUT testno preskočen)."
+    else:
+        sporocilo = f"Najdenih {len(novi_dn)} DN, {obdelanih} prevzemnic uspešno posodobljenih."
+
+    return {
+        "status": "ok",
+        "message": sporocilo,
+        "results": results,
+        "warnings": warnings,
+        "vse_uspesno": vse_uspesno,
+    }
+
+
+def _obdelaj_sscc(client: EVascoClient) -> dict:
+    """Zapiše konstanten SSCC na postavke dobavnic kupca `SSCC_PARTNER` iz skladišča `SSCC_SKLADISCE`.
+
+    Obdeluje dobavnice v razponu včeraj..danes. `lot`/`datumUporabnosti`/
+    `kolicina` se vzamejo s postavke dobavnice same (potrjeno s strani
+    uporabnika 2026-10-29), `sscc` je konstanta settings.SSCC_KODA.
+
+    POST /FA/SSCCDobavnica ni idempotenten, zato je podvajanje preprečeno
+    dvakrat: (1) že obdelane dobavnice (`stevilka.leto`) se persistentno
+    beležijo v obdelane_dobavnice.json (glej storage.load_obdelane_dobavnice)
+    in se preskočijo; (2) pred zapisom se še preveri GET /FA/SSCC_dobavnice
+    (postavka z `zs`, ki ima SSCC že zapisan, se preskoči). Dobavnica se
+    zabeleži kot obdelana ŠELE, ko so vse njene relevantne postavke zapisane
+    (ali so SSCC že imele) in NI dry-run. Ko ima dobavnico odprto uporabnik
+    v eVasco, API vrne 400 (prehoden zaklep) - napaka se izpiše kot
+    opozorilo, dobavnica ostane izven seznama in se ob naslednjem zagonu
+    poskusi znova.
+    """
+    today = datetime.now()
+    datum_od = (today - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
+    datum_do = today.strftime("%Y-%m-%dT00:00:00")
+    padding = settings.STEVILKA_PADDING
+    dobavnice = client.get_dobavnice(
+        partner=settings.SSCC_PARTNER,
+        datum_od=datum_od,
+        datum_do=datum_do,
+        stevilka_od=f"{1:0{padding}d}.{today.year - 1}",
+        stevilka_do=f"{'9' * padding}.{today.year}",
+    )
+
+    results: list[dict] = []
+    warnings: list[str] = []
+    obdelane = storage.load_obdelane_dobavnice()
+    nove_obdelane: set[str] = set()
+
+    for dobavnica in dobavnice:
+        postavke = [p for p in dobavnica.get("postavke") or [] if p.get("skladisce") == settings.SSCC_SKLADISCE]
+        if not postavke:
+            continue
+        stevilka = str(dobavnica["stevilka"])
+        leto = dobavnica["leto"]
+        oznaka = f"{stevilka}.{leto}"
+        if oznaka in obdelane:
+            continue
+
+        try:
+            obstojeci_zs = {
+                z["zs"] for z in client.get_sscc_dobavnice(oznaka) if (z.get("sscc") or "").strip()
+            }
+        except Exception as exc:  # noqa: BLE001 - surface per-item error, continue with others
+            warnings.append(f"SSCC: dobavnica {oznaka}: napaka pri preverjanju obstoječih zapisov: {exc}")
+            results.append({"dobavnica": oznaka, "status": "napaka", "error": str(exc)})
+            continue
+
+        vse_zapisane = True
+        for postavka in postavke:
+            zs = postavka["zs"]
+            if zs in obstojeci_zs:
+                continue
+            lot = postavka.get("lot")
+            datum_uporabnosti = next(
+                (
+                    lp.get("datumUporabnosti")
+                    for lp in postavka.get("lotPodatki") or []
+                    if lp.get("lot") == lot and lp.get("datumUporabnosti")
+                ),
+                None,
+            )
+            body: dict[str, Any] = {
+                "stevilka": stevilka,
+                "leto": leto,
+                "zs": zs,
+                "sifra": postavka["sifra"],
+                "lot": lot,
+                "sscc": settings.SSCC_KODA,
+                "datumUporabnosti": datum_uporabnosti,
+                "kolicina": postavka["kolicina"],
+            }
+            rezultat: dict[str, Any] = {"dobavnica": oznaka, "zs": zs, "sifra": postavka["sifra"], "telo": body}
+            if settings.SSCC_DOBAVNICA_DRY_RUN:
+                rezultat["status"] = "pripravljeno"
+                vse_zapisane = False
+            else:
+                try:
+                    client.create_sscc_dobavnica(body)
+                    rezultat["status"] = "uspesno"
+                except Exception as exc:  # noqa: BLE001 - surface per-item error, continue with others
+                    warnings.append(f"SSCC: dobavnica {oznaka} zs {zs}: napaka pri zapisu: {exc}")
+                    rezultat["status"] = "napaka"
+                    rezultat["error"] = str(exc)
+                    vse_zapisane = False
+            results.append(rezultat)
+
+        if vse_zapisane:
+            nove_obdelane.add(oznaka)
+
+    storage.add_obdelane_dobavnice(nove_obdelane)
+
+    if results:
+        output_path = storage.output_sscc_path(datetime.now().strftime("%Y%m%d_%H%M%S"))
+        output_path.write_text(
+            json.dumps(
+                {"dry_run": settings.SSCC_DOBAVNICA_DRY_RUN, "sscc": results}, ensure_ascii=False, indent=2
+            ),
+            encoding="utf-8",
+        )
+
+    zapisanih = sum(1 for r in results if r["status"] in ("uspesno", "pripravljeno"))
+    if not results:
+        message = "SSCC: ni dobavnic za zapis."
+    elif settings.SSCC_DOBAVNICA_DRY_RUN:
+        message = f"SSCC: {zapisanih} zapisov pripravljenih (POST testno preskočen)."
+    else:
+        message = f"SSCC: {zapisanih} zapisov uspešno vnesenih."
+    return {"results": results, "warnings": warnings, "message": message}
+
+def run() -> dict:
+    """Obdela nove DN (prevzemnice) - glej `_obdelaj_dn`. SSCC zapis ima ločen sprožilec, glej `run_sscc`."""
     client = EVascoClient()
     try:
         client.authenticate()
+        return _obdelaj_dn(client)
+    finally:
+        client.close()
 
-        today = datetime.now()
-        yesterday = today - timedelta(days=1)
-        datum_od = yesterday.strftime("%Y-%m-%dT00:00:00")
-        datum_do = today.strftime("%Y-%m-%dT00:00:00")
 
-        padding = settings.STEVILKA_PADDING
-        lansko_leto = yesterday.year
-        letosnje_leto = today.year
-        stevilka_od = f"{1:0{padding}d}.{lansko_leto}"
-        stevilka_do = f"{'9' * padding}.{letosnje_leto}"
+def run_sscc() -> dict:
+    """Zapiše SSCC na dobavnice (gumb "Zapiši SSCC" v GUI) - glej `_obdelaj_sscc`.
 
-        dn_list = client.get_dn_nalogi(
-            datum_od=datum_od,
-            datum_do=datum_do,
-            stevilka_od=stevilka_od,
-            stevilka_do=stevilka_do,
-        )
-
-        # TESTNO OBDOBJE (settings.DN_STEVILKA_OD, glej app/config.py): dokler
-        # se sistem ročno testira, se DN pod to številko izločijo, da se ne
-        # posega v prevzemnice, ki so bile obdelane/preverjene še pred
-        # uvedbo tega procesa - primerjava je numerična (`stevilka` je v
-        # odgovoru API-ja neblokiran string, npr. "52870", ne zero-padded),
-        # ne string primerjava.
-        if settings.DN_STEVILKA_OD > 1:
-            dn_list = [dn for dn in dn_list if int(dn.get("stevilka") or 0) >= settings.DN_STEVILKA_OD]
-
-        if not dn_list:
-            return {
-                "status": "ok",
-                "message": "Ni novih delovnih nalogov za obdelavo.",
-                "results": [],
-            }
-
-        obdelani = storage.load_obdelani_dn()
-
-        def dn_key(dn: dict) -> str:
-            return f"{dn.get('stevilka')}.{dn.get('leto', letosnje_leto)}"
-
-        novi_dn = [dn for dn in dn_list if dn_key(dn) not in obdelani]
-
-        if not novi_dn:
-            return {
-                "status": "ok",
-                "message": "Ni novih delovnih nalogov za obdelavo.",
-                "results": [],
-            }
-
-        results: list[dict] = []
-        warnings: list[str] = []
-
-        if settings.PUT_PREVZEMNICA_DRY_RUN:
-            warnings.append(
-                "TESTNO OBDOBJE: PUT /api/v1/FA/prevzemnica še ni objavljen v swaggerju, zato PUT klic ni bil "
-                "izveden - prevzemnice spodaj so samo pripravljene/arhivirane, NISO dejansko posodobljene."
-            )
-
-        for dn in novi_dn:
-            dn_stevilka_raw = dn.get("stevilka")
-            dn_leto = dn.get("leto", letosnje_leto)
-            pre_stevilka_raw = _get_dodatno_polje(dn.get("dodatnaPolja"), "PRE_STEVILKA")
-
-            if not pre_stevilka_raw:
-                warnings.append(f"DN {dn_stevilka_raw}: manjka PRE_STEVILKA, prevzemnice ni bilo mogoče poiskati.")
-                results.append({"dn": dn_stevilka_raw, "pre_stevilka": None, "status": "brez_pre_stevilke"})
-                continue
-
-            pre_stevilka = str(pre_stevilka_raw).strip()
-            stevilka_leto = pre_stevilka if "." in pre_stevilka else f"{pre_stevilka}.{dn_leto}"
-
-            try:
-                prevzemnica = client.get_prevzemnica_by_stevilka(stevilka_leto)
-            except Exception as exc:  # noqa: BLE001 - surface per-item error, continue with others
-                warnings.append(f"DN {dn_stevilka_raw}: napaka pri pridobivanju prevzemnice {pre_stevilka}: {exc}")
-                results.append({"dn": dn_stevilka_raw, "pre_stevilka": pre_stevilka, "status": "napaka_prevzemnica", "error": str(exc)})
-                continue
-
-            if not prevzemnica:
-                warnings.append(f"DN {dn_stevilka_raw}: prevzemnica {pre_stevilka} ni bila najdena.")
-                results.append({"dn": dn_stevilka_raw, "pre_stevilka": pre_stevilka, "status": "prevzemnica_ni_najdena"})
-                continue
-
-            try:
-                header_body, postavke_body, lot_zapisi, cena_warnings = _prepare_prevzemnica_update(
-                    client, prevzemnica[0], str(dn_stevilka_raw)
-                )
-                warnings.extend(cena_warnings)
-            except Exception as exc:  # noqa: BLE001 - surface per-item error, continue with others
-                warnings.append(
-                    f"DN {dn_stevilka_raw}: napaka pri izračunu podatkov za prevzemnico {pre_stevilka}: {exc}"
-                )
-                results.append({"dn": dn_stevilka_raw, "pre_stevilka": pre_stevilka, "status": "napaka_izracuna", "error": str(exc)})
-                continue
-
-            try:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-                # --- LOT / DATUM_UPORABNOSTI: FASifranti/lotPodatki ---
-                # Preverba (GET client.get_lot_podatki) pove, ali bi dejanski
-                # zapis sprožil POST (nov zapis), PUT (obstoječ zapis, druga
-                # vrednost) ali nič (obstoječa vrednost je že enaka) -
-                # arhivska datoteka mora vsebovati TO odločitev in TOČNO
-                # telo, ki je bilo poslano.
-                lot_podatki_nacrt: list[dict[str, Any]] = []
-                for zapis in lot_zapisi:
-                    obstojeci = client.get_lot_podatki(zapis["sifra"], zapis["lot"])
-                    if obstojeci and (obstojeci[0].get("datumUporabnosti") or "")[:10] == zapis["datumUporabnosti"][:10]:
-                        akcija = "brez_spremembe"
-                    elif obstojeci:
-                        akcija = "posodobitev (PUT)"
-                    else:
-                        akcija = "nov_zapis (POST)"
-                    lot_podatki_nacrt.append({"akcija": akcija, "telo": zapis, "obstojeci_zapis": obstojeci})
-
-                    if akcija == "posodobitev (PUT)":
-                        client.update_lot_podatki(zapis)
-                    elif akcija == "nov_zapis (POST)":
-                        client.create_lot_podatki(zapis)
-
-                # --- Posodobitev obstoječe prevzemnice: 2x PUT FA/prevzemnica[/spremembaPostavk] ---
-                # TESTNO OBDOBJE (settings.PUT_PREVZEMNICA_DRY_RUN, privzeto
-                # True čeprav sta oba PUT-a od 2026-07-27 objavljena v
-                # swaggerju - flag se ugasne šele po ročni potrditvi na živih
-                # podatkih): dejanska PUT klica se PRESKOČITA - telesi se
-                # samo izračunata in arhivirata, da je mogoče natančno
-                # preveriti, kaj bi bilo poslano. DN se v tem primeru
-                # NAMENOMA ne doda v obdelani_dn (glej spodaj), da se enkrat
-                # ko je PUT_PREVZEMNICA_DRY_RUN=False samodejno dejansko
-                # obdela, brez ročnega posega.
-                if settings.PUT_PREVZEMNICA_DRY_RUN:
-                    response_glava = None
-                    response_postavke = None
-                    status = "pripravljeno"
-                else:
-                    response_glava = client.update_prevzemnica(header_body)
-                    response_postavke = client.update_prevzemnica_postavke(postavke_body)
-                    status = "uspesno"
-
-                output_path = storage.output_update_path(pre_stevilka, timestamp)
-                output_path.write_text(
-                    json.dumps(
-                        {
-                            "dry_run": settings.PUT_PREVZEMNICA_DRY_RUN,
-                            "prevzemnicaGlava": header_body,
-                            "prevzemnicaPostavke": postavke_body,
-                            "lotPodatki": lot_podatki_nacrt,
-                        },
-                        ensure_ascii=False,
-                        indent=2,
-                    ),
-                    encoding="utf-8",
-                )
-
-                result: dict[str, Any] = {
-                    "dn": dn_stevilka_raw,
-                    "pre_stevilka": pre_stevilka,
-                    "status": status,
-                    "izhodna_datoteka": str(output_path),
-                }
-                if response_glava is not None or response_postavke is not None:
-                    result["odgovor"] = {"glava": response_glava, "postavke": response_postavke}
-                results.append(result)
-
-                if status == "uspesno":
-                    storage.add_obdelani_dn({dn_key(dn)})
-            except Exception as exc:  # noqa: BLE001 - collect per-item error, continue with others
-                warnings.append(f"DN {dn_stevilka_raw}: napaka pri posodobitvi prevzemnice {pre_stevilka}: {exc}")
-                results.append({"dn": dn_stevilka_raw, "pre_stevilka": pre_stevilka, "status": "napaka", "error": str(exc)})
-
-        uspesni_statusi = ("uspesno", "pripravljeno")
-        vse_uspesno = all(r["status"] in uspesni_statusi for r in results)
-        obdelanih = sum(1 for r in results if r["status"] in uspesni_statusi)
-
-        if settings.PUT_PREVZEMNICA_DRY_RUN:
-            sporocilo = f"Najdenih {len(novi_dn)} DN, {obdelanih} prevzemnic pripravljenih (PUT testno preskočen)."
-        else:
-            sporocilo = f"Najdenih {len(novi_dn)} DN, {obdelanih} prevzemnic uspešno posodobljenih."
-
+    Teče neodvisno od obdelave DN: dobavnica nastane običajno po prevzemnici,
+    zato je ob obdelavi DN še ni.
+    """
+    client = EVascoClient()
+    try:
+        client.authenticate()
+        sscc = _obdelaj_sscc(client)
         return {
             "status": "ok",
-            "message": sporocilo,
-            "results": results,
-            "warnings": warnings,
-            "vse_uspesno": vse_uspesno,
+            "message": sscc["message"],
+            "results": sscc["results"],
+            "warnings": sscc["warnings"],
+            "vse_uspesno": all(r["status"] in ("uspesno", "pripravljeno") for r in sscc["results"]),
         }
     finally:
         client.close()

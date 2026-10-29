@@ -1,19 +1,21 @@
-; Inno Setup skripta za namestitveni paket DN-PREVZEMNICA-Tomato GUI.
+; Inno Setup skripta za namestitveni paket Sloncek-Tomato GUI.
 ; Prevesti (compile) z ISCC.exe (Inno Setup 6+), glej build_installer.bat.
-; Predpogoj: dist\DN-PREVZEMNICA-Tomato-GUI.exe mora že obstajati
+; Predpogoj: dist\Sloncek-Tomato-GUI.exe mora že obstajati
 ; (zgrajen z build_exe.bat / gui\gui.spec).
 
-#define MyAppName "Slonček"
-#define MyAppVersion "1.0"
+#define MyAppName "Slonček - Tomato"
+; Verzija aplikacije - uskladi z APP_VERSION v gui/main.py.
+#define MyAppVersion "1.1"
 #define MyAppPublisher "Digit"
-#define MyAppExeName "DN-PREVZEMNICA-Tomato-GUI.exe"
+#define MyAppExeName "Sloncek-Tomato-GUI.exe"
 
 [Setup]
 AppId={{9E7F2C9E-9E1A-4B7B-8A2B-6C9C7E9E7A11}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppVersion}.0.0
 AppPublisher={#MyAppPublisher}
-DefaultDirName=C:\DN-PREVZEMNICA_Tomato
+DefaultDirName=C:\Sloncek-Tomato
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 ; Namestitveni jezik: samo angleščina (en sam vnos v [Languages] spodaj -
@@ -24,7 +26,7 @@ SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 OutputDir=dist_installer
-OutputBaseFilename=DN-PREVZEMNICA-Tomato-GUI-Setup
+OutputBaseFilename=Sloncek-Tomato-GUI-Setup
 UninstallDisplayIcon={app}\{#MyAppExeName}
 WizardStyle=modern
 
@@ -35,7 +37,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Files]
-Source: "dist\DN-PREVZEMNICA-Tomato-GUI.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\Sloncek-Tomato-GUI.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: ".env.example"; DestDir: "{app}"; DestName: ".env.example"; Flags: ignoreversion
 ; .env se vedno prepiše z vrednostmi iz gui\.env, kot je bila ta datoteka
 ; nastavljena na razvijalčevem računalniku v trenutku generiranja tega
